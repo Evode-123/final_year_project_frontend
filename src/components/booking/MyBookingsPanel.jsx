@@ -18,16 +18,14 @@ const MyBookingsPanel = () => {
     loadMyBookings();
   }, []);
 
+  // ✅ UPDATED: Now uses user-specific endpoint
   const loadMyBookings = async () => {
     try {
       setLoading(true);
       setError('');
-      // Get today's bookings - this will show all bookings made by the logged-in user
-      const allBookings = await transportApiService.getTodayBookings();
-      
-      // Filter to show only confirmed bookings
-      const confirmedBookings = allBookings.filter(b => b.bookingStatus === 'CONFIRMED');
-      setBookings(confirmedBookings);
+      // ✅ Changed from getTodayBookings() to getMyActiveBookings()
+      const myBookings = await transportApiService.getMyActiveBookings();
+      setBookings(myBookings);
     } catch (err) {
       setError('Failed to load bookings: ' + err.message);
     } finally {

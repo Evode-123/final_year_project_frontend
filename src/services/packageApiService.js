@@ -1,3 +1,5 @@
+// packageApiService.js - COMPLETE UPDATED VERSION
+
 import { TRANSPORT_API_URL } from '../utils/constants';
 
 class PackageApiService {
@@ -48,12 +50,41 @@ class PackageApiService {
     });
   }
 
-  // ============ PACKAGE TRACKING ============
+  // ============ PACKAGE TRACKING (PUBLIC) ============
+  
+  /**
+   * Track package by tracking number (no auth required)
+   * Anyone with tracking number can track their package
+   */
   async trackPackage(trackingNumber) {
     return this.request(`/packages/track/${trackingNumber}`);
   }
 
-  // ============ PACKAGE MANAGEMENT ============
+  // ============ USER-SPECIFIC ENDPOINTS ============
+  
+  /**
+   * ✅ NEW: Get packages sent by current user
+   */
+  async getMySentPackages() {
+    return this.request('/packages/my-sent-packages');
+  }
+
+  /**
+   * ✅ NEW: Get packages where current user is receiver
+   */
+  async getMyReceivedPackages() {
+    return this.request('/packages/my-received-packages');
+  }
+
+  /**
+   * ✅ NEW: Get package statistics for current user
+   */
+  async getMyStatistics() {
+    return this.request('/packages/my-statistics');
+  }
+
+  // ============ PACKAGE MANAGEMENT (STAFF) ============
+  
   async markPackageAsArrived(packageId) {
     return this.request(`/packages/${packageId}/arrived`, {
       method: 'PUT'
@@ -74,7 +105,8 @@ class PackageApiService {
     });
   }
 
-  // ============ PACKAGE QUERIES ============
+  // ============ PACKAGE QUERIES (STAFF) ============
+  
   async getPackagesForTrip(tripId) {
     return this.request(`/packages/trip/${tripId}`);
   }

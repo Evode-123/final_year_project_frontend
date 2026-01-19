@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { History, Ticket, Calendar, MapPin, User, Phone, Search, Filter, Loader, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
+import { History, Ticket, Calendar, MapPin, User, Phone, Search, Filter, Loader, AlertCircle, CheckCircle, XCircle, Download, Printer, XOctagon } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { USER_ROLES } from '../../utils/constants';
 import transportApiService from '../../services/transportApiService';
 
 const BookingHistoryPanel = () => {
@@ -11,6 +12,13 @@ const BookingHistoryPanel = () => {
   const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [cancellingId, setCancellingId] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+
+  // ✅ Determine if user is receptionist/admin/manager
+  const isStaffMember = [USER_ROLES.ADMIN, USER_ROLES.MANAGER, USER_ROLES.RECEPTIONIST].includes(user?.role);
 
   useEffect(() => {
     loadBookingHistory();
@@ -20,12 +28,18 @@ const BookingHistoryPanel = () => {
     filterBookings();
   }, [searchTerm, statusFilter, allBookings]);
 
+  // ✅ UPDATED: Load appropriate bookings based on role
   const loadBookingHistory = async () => {
     try {
       setLoading(true);
       setError('');
-      // Get all bookings
-      const bookings = await transportApiService.getTodayBookings();
+      
+      // ✅ Receptionist/Admin/Manager see ALL bookings
+      // ✅ Regular users see only THEIR bookings
+      const bookings = isStaffMember 
+        ? await transportApiService.getAllBookingsHistory()
+        : await transportApiService.getMyBookingHistory();
+      
       setAllBookings(bookings);
     } catch (err) {
       setError('Failed to load booking history: ' + err.message);
@@ -58,6 +72,47 @@ const BookingHistoryPanel = () => {
     filtered.sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate));
 
     setFilteredBookings(filtered);
+  };
+
+  // ✅ Handle cancel booking
+  const handleCancelBooking = async () => {
+    if (!selectedBooking || !cancelReason.trim()) {
+      alert('Please provide a cancellation reason');
+      return;
+    }
+
+    try {
+      setCancellingId(selectedBooking.id);
+      await transportApiService.cancelBooking(selectedBooking.id, cancelReason);
+      
+      // Refresh bookings
+      await loadBookingHistory();
+      
+      // Close modal and reset
+      setShowCancelModal(false);
+      setSelectedBooking(null);
+      setCancelReason('');
+      
+      alert('Booking cancelled successfully!');
+    } catch (err) {
+      alert('Failed to cancel booking: ' + err.message);
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  // ✅ Handle download ticket
+  const handleDownloadTicket = async (ticketNumber) => {
+    try {
+      await transportApiService.downloadTicket(ticketNumber);
+    } catch (err) {
+      alert('Failed to download ticket: ' + err.message);
+    }
+  };
+
+  // ✅ Handle print ticket
+  const handlePrintTicket = (ticketNumber) => {
+    transportApiService.printTicketHTML(ticketNumber);
   };
 
   const getStatusBadge = (status) => {
@@ -106,8 +161,14 @@ const BookingHistoryPanel = () => {
       <div className="bg-white border border-gray-200 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-semibold text-gray-800">Booking History</h3>
-            <p className="text-sm text-gray-600 mt-1">View all your past and current bookings</p>
+            <h3 className="text-lg font-semibold text-gray-800">
+              {isStaffMember ? 'All Bookings History' : 'My Booking History'}
+            </h3>
+            <p className="text-sm text-gray-600 mt-1">
+              {isStaffMember 
+                ? 'View and manage all customer bookings' 
+                : 'View all your past and current bookings'}
+            </p>
           </div>
           <button
             onClick={loadBookingHistory}
@@ -174,7 +235,7 @@ const BookingHistoryPanel = () => {
           </p>
         </div>
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <p className="text-sm text-gray-600 mb-1">Total Spent</p>
+          <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
           <p className="text-2xl font-bold text-blue-600">
             RWF {allBookings
               .filter(b => b.bookingStatus === 'CONFIRMED')
@@ -192,7 +253,7 @@ const BookingHistoryPanel = () => {
           <p className="text-gray-500 text-sm mt-2">
             {searchTerm || statusFilter !== 'ALL' 
               ? 'Try adjusting your search or filters'
-              : 'Your booking history will appear here'}
+              : 'Booking history will appear here'}
           </p>
         </div>
       ) : (
@@ -255,15 +316,24 @@ const BookingHistoryPanel = () => {
                     <div>
                       <p className="text-xs text-gray-500">Passenger</p>
                       <p className="font-semibold text-gray-800">{booking.customer.names}</p>
-                      <p className="text-sm text-gray-600">{booking.customer.phoneNumber}</p>
+                      <p className="text-sm text-gray-600 flex items-center gap-1">
+                        <Phone className="w-3 h-3" />
+                        {booking.customer.phoneNumber}
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Seat: <span className="font-semibold">{booking.seatNumber}</span></p>
-                    <p className="text-sm text-gray-600">Vehicle: <span className="font-semibold">{booking.dailyTrip.vehicle.plateNo}</span></p>
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <p className="text-sm text-gray-600">Seat: <span className="font-semibold">{booking.seatNumber}</span></p>
+                      <p className="text-sm text-gray-600">Vehicle: <span className="font-semibold">{booking.dailyTrip.vehicle.plateNo}</span></p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Payment</p>
+                      <p className="text-sm font-semibold text-gray-800">{booking.paymentMethod}</p>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-600">Amount</p>
@@ -279,12 +349,110 @@ const BookingHistoryPanel = () => {
                     {booking.cancelledAt && (
                       <p className="text-xs text-red-600 mt-1">
                         Cancelled on {new Date(booking.cancelledAt).toLocaleString()}
+                        {booking.cancelledBy && ` by ${booking.cancelledBy}`}
                       </p>
                     )}
                   </div>
                 )}
+
+                {/* ✅ ACTION BUTTONS */}
+                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
+                  <button
+                    onClick={() => handlePrintTicket(booking.ticketNumber)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                  >
+                    <Printer className="w-4 h-4" />
+                    Print Ticket
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadTicket(booking.ticketNumber)}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+
+                  {/* ✅ Only show cancel button for confirmed bookings */}
+                  {booking.bookingStatus === 'CONFIRMED' && (
+                    <button
+                      onClick={() => {
+                        setSelectedBooking(booking);
+                        setShowCancelModal(true);
+                      }}
+                      disabled={cancellingId === booking.id}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed ml-auto"
+                    >
+                      {cancellingId === booking.id ? (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <XOctagon className="w-4 h-4" />
+                          Cancel Booking
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ✅ CANCEL BOOKING MODAL */}
+      {showCancelModal && selectedBooking && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">Cancel Booking</h3>
+            
+            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                <strong>Ticket:</strong> {selectedBooking.ticketNumber}
+              </p>
+              <p className="text-sm text-yellow-800">
+                <strong>Passenger:</strong> {selectedBooking.customer.names}
+              </p>
+              <p className="text-sm text-yellow-800">
+                <strong>Route:</strong> {selectedBooking.dailyTrip.route.origin} → {selectedBooking.dailyTrip.route.destination}
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cancellation Reason <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Please provide a reason for cancellation..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setSelectedBooking(null);
+                  setCancelReason('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleCancelBooking}
+                disabled={!cancelReason.trim() || cancellingId === selectedBooking.id}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {cancellingId === selectedBooking.id ? 'Cancelling...' : 'Confirm Cancellation'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -27,7 +27,11 @@ const PAYMENT_METHODS = {
 const PackageBookingManagement = () => {
   const [availableTrips, setAvailableTrips] = useState([]);
   const [bookingHistory, setBookingHistory] = useState([]);
+  const [routes, setRoutes] = useState([]);
+  const [origins, setOrigins] = useState([]);
+  const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [bookingLoading, setBookingLoading] = useState(false);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [error, setError] = useState('');
@@ -60,21 +64,33 @@ const PackageBookingManagement = () => {
     isFragile: false,
     
     // Payment
-    paymentMethod: PAYMENT_METHODS.CASH
+    paymentMethod: '' // No default - user must select
   });
 
   useEffect(() => {
-    loadAvailableTrips();
-    loadBookingHistory();
+    loadInitialData();
   }, []);
 
-  const loadAvailableTrips = async () => {
+  const loadInitialData = async () => {
     try {
       setLoading(true);
-      const trips = await transportApiService.getAvailableTrips();
+      const [trips, routesData] = await Promise.all([
+        transportApiService.getAvailableTrips(),
+        transportApiService.getAllRoutes()
+      ]);
       setAvailableTrips(trips);
+      setRoutes(routesData);
+      
+      // Extract unique origins and destinations
+      const uniqueOrigins = [...new Set(routesData.map(route => route.origin))].sort();
+      const uniqueDestinations = [...new Set(routesData.map(route => route.destination))].sort();
+      
+      setOrigins(uniqueOrigins);
+      setDestinations(uniqueDestinations);
+      
+      await loadBookingHistory();
     } catch (err) {
-      setError('Failed to load trips: ' + err.message);
+      setError('Failed to load data: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -108,8 +124,34 @@ const PackageBookingManagement = () => {
       const trips = await transportApiService.searchTrips(searchData);
       setAvailableTrips(trips);
       setSuccess(`Found ${trips.length} available trip(s)`);
+      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError('Failed to search trips: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearFilter = async () => {
+    setError('');
+    setSuccess('');
+    
+    // Reset search data to default
+    setSearchData({
+      origin: '',
+      destination: '',
+      travelDate: new Date().toISOString().split('T')[0]
+    });
+    
+    // Reload all available trips
+    try {
+      setLoading(true);
+      const trips = await transportApiService.getAvailableTrips();
+      setAvailableTrips(trips);
+      setSuccess('Filter cleared - showing all available trips');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError('Failed to load trips: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -148,7 +190,13 @@ const PackageBookingManagement = () => {
       return;
     }
 
+    if (!packageData.paymentMethod) {
+      setError('Please select a payment method');
+      return;
+    }
+
     try {
+      setBookingLoading(true);
       const bookingData = {
         ...packageData,
         dailyTripId: selectedTrip.dailyTripId,
@@ -165,13 +213,14 @@ const PackageBookingManagement = () => {
       resetForm();
       
       // Reload trips and booking history
-      await loadAvailableTrips();
-      await loadBookingHistory();
+      await loadInitialData();
       
       // Switch to history view to show the new booking
       setTimeout(() => setViewMode('history'), 2000);
     } catch (err) {
       setError('Failed to book package: ' + err.message);
+    } finally {
+      setBookingLoading(false);
     }
   };
 
@@ -189,7 +238,7 @@ const PackageBookingManagement = () => {
       packageWeight: '',
       packageValue: '',
       isFragile: false,
-      paymentMethod: PAYMENT_METHODS.CASH
+      paymentMethod: '' // No default - user must select
     });
     setSelectedTrip(null);
     setShowBookingForm(false);
@@ -203,7 +252,7 @@ const PackageBookingManagement = () => {
     });
   };
 
-  if (loading && !showBookingForm) {
+  if (loading && availableTrips.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -421,91 +470,170 @@ const PackageBookingManagement = () => {
         </div>
       )}
 
-      {/* Booking Form */}
-      {viewMode === 'book' && showBookingForm && (
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-800">Book Package for Delivery</h2>
-            <button
-              onClick={resetForm}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X className="w-6 h-6" />
-            </button>
+      {/* Book New Package View */}
+      {viewMode === 'book' && (
+        <>
+          {/* Filter Section - Always Visible */}
+          <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+            <div className="flex items-center gap-2 mb-4">
+              <Search className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-bold text-gray-800">Filter Available Trips</h2>
+            </div>
+            
+            <form onSubmit={handleSearchTrips} className="grid grid-cols-1 md:grid-cols-7 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Origin
+                </label>
+                <select
+                  value={searchData.origin}
+                  onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Origins</option>
+                  {origins.map((origin) => (
+                    <option key={origin} value={origin}>
+                      {origin}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Destination
+                </label>
+                <select
+                  value={searchData.destination}
+                  onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Destinations</option>
+                  {destinations.map((destination) => (
+                    <option key={destination} value={destination}>
+                      {destination}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Travel Date
+                </label>
+                <input
+                  type="date"
+                  value={searchData.travelDate}
+                  onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="md:col-span-1 flex flex-col gap-2 items-end justify-end">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  <Search className="w-5 h-5" />
+                  Filter
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearFilter}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Clear
+                </button>
+              </div>
+            </form>
           </div>
 
-          {!selectedTrip ? (
-            <div>
-              {/* Search Form */}
-              <form onSubmit={handleSearchTrips} className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-semibold text-gray-800 mb-4">Search Available Trips</h3>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <input
-                    type="text"
-                    value={searchData.origin}
-                    onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Origin"
-                  />
-                  <input
-                    type="text"
-                    value={searchData.destination}
-                    onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Destination"
-                  />
-                  <input
-                    type="date"
-                    value={searchData.travelDate}
-                    onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
-                    className="px-4 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    <Search className="w-5 h-5 mx-auto" />
-                  </button>
-                </div>
-              </form>
-
-              {/* Available Trips */}
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Select a Trip</h3>
-              <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto">
-                {availableTrips.map((trip) => (
-                  <button
-                    key={trip.dailyTripId}
-                    onClick={() => handleSelectTrip(trip)}
-                    className="text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-5 h-5 text-blue-600" />
-                        <span className="font-bold text-gray-800">
-                          {trip.origin} → {trip.destination}
-                        </span>
-                      </div>
-                      <span className="text-lg font-bold text-blue-600">RWF {trip.price}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatDate(trip.tripDate)}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        <span>{trip.departureTime}</span>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        Vehicle: {trip.vehiclePlateNo}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+          {/* Available Trips - Always Visible */}
+          <div className="bg-white rounded-lg shadow-md border border-gray-200">
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-bold text-gray-800">Available Trips ({availableTrips.length})</h2>
+              <p className="text-sm text-gray-600 mt-1">Select a trip to book your package</p>
             </div>
-          ) : (
-            <form onSubmit={handleBookPackage} className="space-y-6">
+            
+            <div className="p-6">
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                  <p className="mt-4 text-gray-600">Loading trips...</p>
+                </div>
+              ) : availableTrips.length === 0 ? (
+                <div className="text-center py-12">
+                  <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 text-lg">No trips available</p>
+                  <p className="text-gray-400 text-sm mt-2">Try adjusting your filters or check back later</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {availableTrips.map((trip) => (
+                    <div
+                      key={trip.dailyTripId}
+                      className="border-2 border-gray-300 rounded-lg p-4 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => handleSelectTrip(trip)}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="w-5 h-5 text-blue-600" />
+                          <span className="font-bold text-gray-800">
+                            {trip.origin} → {trip.destination}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="space-y-2 text-sm text-gray-600 mb-4">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>{formatDate(trip.tripDate)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-4 h-4" />
+                          <span>{trip.departureTime}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4" />
+                          <span className="font-bold text-blue-600">RWF {trip.price}</span>
+                        </div>
+                        <div className="text-xs">
+                          {trip.availableSeats}/{trip.totalSeats} seats available
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          Vehicle: {trip.vehiclePlateNo}
+                        </div>
+                      </div>
+                      <button
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Select Trip
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Booking Form Modal */}
+      {showBookingForm && selectedTrip && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h2 className="text-2xl font-bold text-gray-800">Book Package for Delivery</h2>
+              <button
+                onClick={resetForm}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={handleBookPackage} className="p-6 space-y-6">
               {/* Selected Trip Display */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Selected Trip</h3>
@@ -520,7 +648,10 @@ const PackageBookingManagement = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setSelectedTrip(null)}
+                    onClick={() => {
+                      setSelectedTrip(null);
+                      setShowBookingForm(false);
+                    }}
                     className="text-sm text-blue-600 hover:text-blue-800"
                   >
                     Change Trip
@@ -755,17 +886,31 @@ const PackageBookingManagement = () => {
               <div className="flex items-center gap-3 pt-4 border-t">
                 <button
                   type="submit"
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  disabled={bookingLoading}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <CheckCircle className="w-5 h-5" />
-                  Book Package
+                  {bookingLoading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      Booking...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      Book Package
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedTrip(null)}
-                  className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  onClick={() => {
+                    setSelectedTrip(null);
+                    setShowBookingForm(false);
+                  }}
+                  disabled={bookingLoading}
+                  className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Change Trip
+                  Cancel
                 </button>
               </div>
 
@@ -779,24 +924,6 @@ const PackageBookingManagement = () => {
                 </ul>
               </div>
             </form>
-          )}
-        </div>
-      )}
-
-      {/* Trip Selection View (when in book mode but no form shown) */}
-      {viewMode === 'book' && !showBookingForm && (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
-          <div className="text-center py-12">
-            <PackageIcon className="w-16 h-16 text-blue-600 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">Ready to Book a Package?</h3>
-            <p className="text-gray-600 mb-6">Select a trip and book your package for delivery</p>
-            <button
-              onClick={() => setShowBookingForm(true)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
-            >
-              <PackageIcon className="w-5 h-5" />
-              Start Booking
-            </button>
           </div>
         </div>
       )}

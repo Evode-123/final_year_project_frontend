@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
-import { MapPin, Car, Users, Ticket, Settings } from 'lucide-react'; // Added Settings
+import { MapPin, Car, Users, Ticket, Settings, History } from 'lucide-react'; // Added Settings
 import TripGenerationPanel from './TripGenerationPanel'; // NEW IMPORT
 import RoutesManagement from './RoutesManagement';
 import VehiclesManagement from './VehiclesManagement';
 import DriversManagement from './DriversManagement';
 import BookingsManagement from './BookingsManagement';
+import BookingHistoryPanel from '../booking/BookingHistoryPanel';
 
 const TransportHub = () => {
-  const [activeTab, setActiveTab] = useState('routes');
+  const [activeTab, setActiveTab] = useState('vehicles');
 
   const tabs = [
-  { id: 'routes', label: 'Routes', icon: MapPin, component: RoutesManagement },
   { id: 'vehicles', label: 'Vehicles', icon: Car, component: VehiclesManagement },
   { id: 'drivers', label: 'Drivers', icon: Users, component: DriversManagement },
+  { id: 'routes', label: 'Routes', icon: MapPin, component: RoutesManagement },
+  { id: 'trips', label: 'Generate Trip', icon: Settings, component: TripGenerationPanel },
   { id: 'bookings', label: 'Bookings', icon: Ticket, component: BookingsManagement },
-  { id: 'trips', label: 'Trip Generation', icon: Settings, component: TripGenerationPanel } // NEW TAB
+  { id: 'booking-history', label: 'Booking History', icon: History, component: BookingHistoryPanel }
 ];
 
   const ActiveComponent = tabs.find(tab => tab.id === activeTab)?.component || RoutesManagement;
@@ -23,12 +25,8 @@ const TransportHub = () => {
     <div className="space-y-6">
       {/* Header with Horizontal Tabs */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200">
-        <div className="p-3 border-b border-gray-200">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Transport Operation</h1>
-        </div>
-
         {/* Horizontal Tab Navigation */}
-        <div className="flex items-center gap-2 px-6 py-4 bg-gray-50 border-b border-gray-200 overflow-x-auto">
+        <div className="flex items-center gap-2 px-1 py-3 bg-gray-50 border-b border-gray-200 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (

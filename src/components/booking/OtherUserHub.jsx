@@ -1,31 +1,8 @@
-import React, { useState } from 'react';
-import { Search, Calendar, MapPin, Ticket, History } from 'lucide-react';
+import React from 'react';
+import { Search, Calendar, MapPin, Ticket } from 'lucide-react';
 import SearchTripsPanel from './SearchTripsPanel';
-import MyBookingsPanel from './MyBookingsPanel';
-import BookingHistoryPanel from './BookingHistoryPanel';
 
 const OtherUserHub = () => {
-  const [activeTab, setActiveTab] = useState('search');
-
-  const tabs = [
-    { id: 'search', label: 'Search Trips', icon: <Search className="w-5 h-5" /> },
-    { id: 'bookings', label: 'My Bookings', icon: <Ticket className="w-5 h-5" /> },
-    { id: 'history', label: 'Booking History', icon: <History className="w-5 h-5" /> },
-  ];
-
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'search':
-        return <SearchTripsPanel />;
-      case 'bookings':
-        return <MyBookingsPanel />;
-      case 'history':
-        return <BookingHistoryPanel />;
-      default:
-        return <SearchTripsPanel />;
-    }
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -36,35 +13,13 @@ const OtherUserHub = () => {
           </div>
           <div>
             <h1 className="text-3xl font-bold">Book Your Trip</h1>
-            <p className="text-blue-100 mt-1">Search, book, and manage your travel tickets</p>
+            <p className="text-blue-100 mt-1">Search and book your travel tickets</p>
           </div>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="flex border-b border-gray-200">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 px-6 py-4 font-medium transition-colors ${
-                activeTab === tab.id
-                  ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-            >
-              {tab.icon}
-              <span>{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Content */}
-        <div className="p-6">
-          {renderContent()}
-        </div>
-      </div>
+      {/* Search Panel */}
+      <SearchTripsPanel />
 
       {/* Quick Info Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

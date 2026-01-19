@@ -8,12 +8,25 @@ import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardContent from './components/dashboard/DashboardContent';
+import AdminDashboard from './components/dashboard/AdminDashboard';
+import ManagerDashboard from './components/dashboard/ManagerDashboard';
+import DriverDashboard from './components/dashboard/DriverDashboard';
+import ReceptionistDashboard from './components/dashboard/ReceptionistDashboard';
+import OtherUserDashboard from './components/dashboard/OtherUserDashboard';
 import AdminUserManagement from './components/admin/AdminUserManagement';
 import SettingsPage from './components/settings/SettingsPage';
 import TransportHub from './components/transport/TransportHub';
 import PackageHub from './components/packages/PackageHub';
-import SafetyHub from './components/safety/SafetyHub';
-import OtherUserHub from './components/booking/OtherUserHub'; // ✅ NEW IMPORT
+import OtherUserHub from './components/booking/OtherUserHub';
+import MyBookingsPanel from './components/booking/MyBookingsPanel';
+import BookingHistoryPanel from './components/booking/BookingHistoryPanel';
+import FeedbackManagement from './components/feedback/FeedbackManagement';
+import UserFeedbackPage from './components/feedback/UserFeedbackPage';
+import IncidentManagement from './components/incidents/IncidentManagement';
+import UpcomingTrips from './components/trips/UpcomingTrips';
+import MyPackagesPanel from './components/packages/MyPackagesPanel';
+import DriverSafetyHub from './components/safety/DriverSafetyHub';
+import AdminManagerSafetyHub from './components/safety/AdminManagerSafetyHub';
 import { USER_ROLES } from './utils/constants';
 
 const App = () => {
@@ -87,32 +100,73 @@ const App = () => {
   const renderPageContent = () => {
     switch (activePage) {
       case 'dashboard':
+        // Role-specific dashboards
+        if (user.role === USER_ROLES.ADMIN) {
+          return <AdminDashboard />;
+        } else if (user.role === USER_ROLES.MANAGER) {
+          return <ManagerDashboard />;
+        } else if (user.role === USER_ROLES.DRIVER) {
+          return <DriverDashboard />;
+        } else if (user.role === USER_ROLES.RECEPTIONIST) {
+          return <ReceptionistDashboard />;
+        } else if (user.role === USER_ROLES.OTHER_USER) {
+          return <OtherUserDashboard />;
+        }
+        // Fallback to default dashboard
         return <DashboardContent />;
+      
       case 'transport':
         return <TransportHub />;
+      
       case 'packages':
         return <PackageHub />;
+      
       case 'safety':
-        return <SafetyHub />;
-      case 'booking': // ✅ NEW CASE for OTHER_USER
+        // Role-based safety hub routing
+        if (user.role === USER_ROLES.DRIVER) {
+          return <DriverSafetyHub />;
+        } else if (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.MANAGER) {
+          return <AdminManagerSafetyHub />;
+        }
+        return <DashboardContent />;
+      
+      case 'booking':
         return <OtherUserHub />;
+
+      case 'my-packages':
+        return <MyPackagesPanel />;
+      
+      case 'my-bookings':
+        return <MyBookingsPanel />;
+      
+      case 'booking-history':
+        return <BookingHistoryPanel />;
+      
+      case 'incidents':
+        return <IncidentManagement />;
+      
+      case 'upcoming-trips':
+        return <UpcomingTrips />;
+      
+      case 'feedback':
+        if (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.MANAGER) {
+          return <FeedbackManagement />;
+        } else if (user.role === USER_ROLES.OTHER_USER) {
+          return <UserFeedbackPage />;
+        }
+        return <DashboardContent />;
+      
       case 'users':
         return user.role === USER_ROLES.ADMIN ? <AdminUserManagement /> : <DashboardContent />;
-      case 'notifications':
-        return (
-          <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-800">Notifications</h1>
-            <p className="text-gray-600">Notification features coming soon...</p>
-          </div>
-        );
+      
       case 'settings':
         return <SettingsPage />;
+      
       default:
         return <DashboardContent />;
     }
   };
 
-  // User is fully authenticated and set up - show dashboard
   return (
     <DashboardLayout activePage={activePage} setActivePage={setActivePage}>
       {renderPageContent()}

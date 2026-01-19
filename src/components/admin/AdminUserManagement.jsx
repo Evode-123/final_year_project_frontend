@@ -189,6 +189,8 @@ const AdminUserManagement = () => {
       case USER_ROLES.ADMIN: return 'bg-red-100 text-red-800';
       case USER_ROLES.MANAGER: return 'bg-blue-100 text-blue-800';
       case USER_ROLES.DRIVER: return 'bg-green-100 text-green-800';
+      case USER_ROLES.RECEPTIONIST: return 'bg-purple-100 text-purple-800';
+      case USER_ROLES.OTHER_USER: return 'bg-yellow-100 text-yellow-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -440,6 +442,7 @@ const AdminUserManagement = () => {
                   <option value={USER_ROLES.MANAGER}>Manager</option>
                   <option value={USER_ROLES.DRIVER}>Driver</option>
                   <option value={USER_ROLES.ADMIN}>Admin</option>
+                  <option value={USER_ROLES.RECEPTIONIST}>Receptionist</option>
                 </select>
               </div>
 
@@ -532,6 +535,7 @@ const AdminUserManagement = () => {
                   <option value={USER_ROLES.MANAGER}>Manager</option>
                   <option value={USER_ROLES.DRIVER}>Driver</option>
                   <option value={USER_ROLES.ADMIN}>Admin</option>
+                  <option value={USER_ROLES.RECEPTIONIST}>Receptionist</option>
                 </select>
               </div>
 

@@ -126,13 +126,15 @@ const VehicleInspectionManagement = () => {
           <h1 className="text-3xl font-bold text-gray-800">Vehicle Inspections</h1>
           <p className="text-gray-600 mt-1">Government 6-month inspection tracking</p>
         </div>
+        {/* Record Inspection Button */}
         <button
           onClick={() => setShowRecordForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-md hover:shadow-lg"
         >
           <Plus className="w-5 h-5" />
           Record Inspection
         </button>
+
       </div>
 
       {/* Alerts */}
@@ -197,118 +199,150 @@ const VehicleInspectionManagement = () => {
         </div>
       </div>
 
-      {/* Record Inspection Form */}
+      {/* Record Inspection Form Modal */}
       {showRecordForm && (
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-800">Record Government Inspection</h2>
-            <button
-              onClick={() => {
-                setShowRecordForm(false);
-                resetForm();
-              }}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X className="w-6 h-6" />
-            </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowRecordForm(false);
+            resetForm();
+          }
+        }}>
+          <div className="bg-white rounded-lg shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    <FileText className="w-7 h-7" />
+                    Record Government Inspection
+                  </h2>
+                  <p className="text-green-100 mt-1">6-month validity period will be calculated automatically</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowRecordForm(false);
+                    resetForm();
+                  }}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <form id="inspection-form" onSubmit={handleSubmit} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Vehicle *
+                    </label>
+                    <select
+                      value={formData.vehicleId}
+                      onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      required
+                    >
+                      <option value="">Select Vehicle</option>
+                      {vehicles.map((vehicle) => (
+                        <option key={vehicle.id} value={vehicle.id}>
+                          🚗 {vehicle.plateNo} - {vehicle.vehicleType}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Inspection Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.inspectionDate}
+                      onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
+                      max={new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Inspection Status *
+                    </label>
+                    <select
+                      value={formData.inspectionStatus}
+                      onChange={(e) => setFormData({ ...formData, inspectionStatus: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      required
+                    >
+                      <option value="PASSED">✅ PASSED</option>
+                      <option value="FAILED">❌ FAILED</option>
+                      <option value="PENDING">⏳ PENDING</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Certificate Number
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.certificateNumber}
+                      onChange={(e) => setFormData({ ...formData, certificateNumber: e.target.value })}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                      placeholder="GOV-2026-123456"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-2">
+                    📝 Inspection Notes
+                  </label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                    rows="4"
+                    placeholder="Any findings or remarks from the inspection..."
+                  />
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800 font-medium">
+                    ℹ️ <strong>Auto-Calculation:</strong> The next inspection due date will be automatically set to 6 months from the inspection date.
+                  </p>
+                </div>
+              </form>
+            </div>
+
+            {/* Modal Footer - Sticky */}
+            <div className="bg-gray-50 border-t border-gray-200 p-6">
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRecordForm(false);
+                    resetForm();
+                  }}
+                  className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  form="inspection-form"
+                  className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-lg hover:shadow-xl font-bold flex items-center gap-2"
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  Record Inspection
+                </button>
+              </div>
+            </div>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Vehicle *
-                </label>
-                <select
-                  value={formData.vehicleId}
-                  onChange={(e) => setFormData({ ...formData, vehicleId: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select Vehicle</option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.id}>
-                      {vehicle.plateNo} - {vehicle.vehicleType}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Inspection Date *
-                </label>
-                <input
-                  type="date"
-                  value={formData.inspectionDate}
-                  onChange={(e) => setFormData({ ...formData, inspectionDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Status *
-                </label>
-                <select
-                  value={formData.inspectionStatus}
-                  onChange={(e) => setFormData({ ...formData, inspectionStatus: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="PASSED">PASSED</option>
-                  <option value="FAILED">FAILED</option>
-                  <option value="PENDING">PENDING</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Certificate Number
-                </label>
-                <input
-                  type="text"
-                  value={formData.certificateNumber}
-                  onChange={(e) => setFormData({ ...formData, certificateNumber: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="GOV-2026-123456"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Notes
-              </label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows="3"
-                placeholder="Additional notes..."
-              />
-            </div>
-
-            <div className="flex items-center gap-3 pt-4">
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Record Inspection
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowRecordForm(false);
-                  resetForm();
-                }}
-                className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
         </div>
       )}
 

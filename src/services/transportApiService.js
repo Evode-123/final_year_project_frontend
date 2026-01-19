@@ -1,3 +1,5 @@
+// transportApiService.js - COMPLETE UPDATED VERSION
+
 import { TRANSPORT_API_URL } from '../utils/constants';
 
 class TransportApiService {
@@ -106,6 +108,12 @@ class TransportApiService {
     });
   }
 
+  async deleteTimeSlot(id) {
+    return this.request(`/timeslots/${id}`, {
+      method: 'DELETE'
+    });
+  }
+
   // ============ ROUTE-VEHICLE ASSIGNMENT ============
   async assignVehicleToRoute(routeId, vehicleId) {
     return this.request('/route-vehicles/assign', {
@@ -116,6 +124,14 @@ class TransportApiService {
 
   async getVehiclesForRoute(routeId) {
     return this.request(`/route-vehicles/route/${routeId}/vehicles`);
+  }
+
+  async getRouteVehicleAssignments(routeId) {
+    return this.request(`/route-vehicles/route/${routeId}`);
+  }
+
+  async getAllRouteVehicleAssignments() {
+    return this.request('/route-vehicles');
   }
 
   async removeVehicleFromRoute(assignmentId) {
@@ -133,6 +149,12 @@ class TransportApiService {
 
   async getTimeSlotsForRoute(routeId) {
     return this.request(`/route-timeslots/route/${routeId}`);
+  }
+
+  async removeTimeSlotFromRoute(assignmentId) {
+    return this.request(`/route-timeslots/${assignmentId}`, {
+      method: 'DELETE'
+    });
   }
 
   // ============ DRIVERS ============
@@ -210,6 +232,22 @@ class TransportApiService {
     });
   }
 
+  // ✅ NEW: Get current user's active bookings
+  async getMyActiveBookings() {
+    return this.request('/bookings/my-bookings');
+  }
+
+  // ✅ NEW: Get current user's booking history
+  async getMyBookingHistory() {
+    return this.request('/bookings/my-history');
+  }
+
+  // ✅ NEW: Get all bookings history (for receptionist/admin/manager)
+  async getAllBookingsHistory() {
+    return this.request('/bookings/all-history');
+  }
+
+  // ✅ UPDATED: For admin/manager/receptionist only
   async getTodayBookings() {
     return this.request('/bookings/today');
   }
@@ -228,7 +266,6 @@ class TransportApiService {
     return this.request(`/bookings/ticket/${ticketNumber}/receipt`);
   }
 
-  // ✅ NEW: Download ticket as HTML file
   async downloadTicket(ticketNumber) {
     try {
       const token = sessionStorage.getItem('token');
@@ -245,23 +282,14 @@ class TransportApiService {
         throw new Error('Failed to download ticket');
       }
 
-      // Get the blob from response
       const blob = await response.blob();
-      
-      // Create a temporary URL for the blob
       const blobUrl = window.URL.createObjectURL(blob);
-      
-      // Create a temporary anchor element and trigger download
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = `Ticket-${ticketNumber}.html`;
-      
-      // Append to body, click, and remove
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Clean up the blob URL
       window.URL.revokeObjectURL(blobUrl);
       
       return true;
@@ -271,24 +299,17 @@ class TransportApiService {
     }
   }
 
-  // ✅ NEW: Download receipt as text file
   async downloadReceipt(ticketNumber) {
     try {
       const receiptText = await this.printReceipt(ticketNumber);
-      
-      // Create blob from text
       const blob = new Blob([receiptText], { type: 'text/plain' });
       const blobUrl = window.URL.createObjectURL(blob);
-      
-      // Create download link
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = `Receipt-${ticketNumber}.txt`;
-      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
       window.URL.revokeObjectURL(blobUrl);
       
       return true;
@@ -298,97 +319,118 @@ class TransportApiService {
     }
   }
 
-// Add to src/services/transportApiService.js
+  // ============ VEHICLE INSPECTIONS ============
+  async recordInspection(inspectionData) {
+    return this.request('/vehicle-inspections/record', {
+      method: 'POST',
+      body: JSON.stringify(inspectionData)
+    });
+  }
 
-// ============ VEHICLE INSPECTIONS ============
+  async getLatestInspection(vehicleId) {
+    return this.request(`/vehicle-inspections/vehicle/${vehicleId}/latest`);
+  }
 
-// Record government inspection
-async recordInspection(inspectionData) {
-  return this.request('/vehicle-inspections/record', {
-    method: 'POST',
-    body: JSON.stringify(inspectionData)
-  });
-}
+  async getVehicleInspectionHistory(vehicleId) {
+    return this.request(`/vehicle-inspections/vehicle/${vehicleId}`);
+  }
 
-// Get latest inspection for vehicle
-async getLatestInspection(vehicleId) {
-  return this.request(`/vehicle-inspections/vehicle/${vehicleId}/latest`);
-}
+  async getVehiclesDueSoon() {
+    return this.request('/vehicle-inspections/due-soon');
+  }
 
-// Get inspection history for vehicle
-async getVehicleInspectionHistory(vehicleId) {
-  return this.request(`/vehicle-inspections/vehicle/${vehicleId}`);
-}
+  async getOverdueVehicles() {
+    return this.request('/vehicle-inspections/overdue');
+  }
 
-// Get vehicles due soon
-async getVehiclesDueSoon() {
-  return this.request('/vehicle-inspections/due-soon');
-}
+  async getInspectionDashboard() {
+    return this.request('/vehicle-inspections/dashboard');
+  }
 
-// Get overdue vehicles
-async getOverdueVehicles() {
-  return this.request('/vehicle-inspections/overdue');
-}
+  // ============ DAILY VEHICLE CHECKS ============
+  async submitDailyCheck(checkData) {
+    return this.request('/daily-checks/submit', {
+      method: 'POST',
+      body: JSON.stringify(checkData)
+    });
+  }
 
-// Get inspection dashboard
-async getInspectionDashboard() {
-  return this.request('/vehicle-inspections/dashboard');
-}
+  async getTodaysChecks() {
+    return this.request('/daily-checks/today');
+  }
 
-// ============ DAILY VEHICLE CHECKS ============
+  async getChecksWithProblems() {
+    return this.request('/daily-checks/problems');
+  }
 
-// Submit daily check
-async submitDailyCheck(checkData) {
-  return this.request('/daily-checks/submit', {
-    method: 'POST',
-    body: JSON.stringify(checkData)
-  });
-}
+  async getUnreviewedProblems() {
+    return this.request('/daily-checks/unreviewed');
+  }
 
-// Get today's checks
-async getTodaysChecks() {
-  return this.request('/daily-checks/today');
-}
+  async getUrgentChecks() {
+    return this.request('/daily-checks/urgent');
+  }
 
-// Get checks with problems
-async getChecksWithProblems() {
-  return this.request('/daily-checks/problems');
-}
+  async getLatestDailyCheck(vehicleId) {
+    return this.request(`/daily-checks/vehicle/${vehicleId}/latest`);
+  }
 
-// Get unreviewed problems
-async getUnreviewedProblems() {
-  return this.request('/daily-checks/unreviewed');
-}
+  async getVehicleCheckHistory(vehicleId, days = 30) {
+    return this.request(`/daily-checks/vehicle/${vehicleId}/history?days=${days}`);
+  }
 
-// Get urgent checks
-async getUrgentChecks() {
-  return this.request('/daily-checks/urgent');
-}
+  async reviewCheck(checkId, reviewData) {
+    return this.request(`/daily-checks/${checkId}/review`, {
+      method: 'PUT',
+      body: JSON.stringify(reviewData)
+    });
+  }
 
-// Get latest check for vehicle
-async getLatestDailyCheck(vehicleId) {
-  return this.request(`/daily-checks/vehicle/${vehicleId}/latest`);
-}
+  async getDailyChecksDashboard() {
+    return this.request('/daily-checks/dashboard');
+  }
 
-// Get check history for vehicle
-async getVehicleCheckHistory(vehicleId, days = 30) {
-  return this.request(`/daily-checks/vehicle/${vehicleId}/history?days=${days}`);
-}
+  /**
+   * Get driver's assigned vehicle inspection status
+   * GET /api/vehicle-inspections/my-vehicle
+   */
+  async getDriverVehicleInspectionStatus() {
+    return this.request('/vehicle-inspections/my-vehicle');
+  }
 
-// Review a check (manager)
-async reviewCheck(checkId, reviewData) {
-  return this.request(`/daily-checks/${checkId}/review`, {
-    method: 'PUT',
-    body: JSON.stringify(reviewData)
-  });
-}
+  /**
+   * Get driver's assigned vehicle inspection history
+   * GET /api/vehicle-inspections/my-vehicle/history
+   */
+  async getDriverVehicleInspectionHistory() {
+    return this.request('/vehicle-inspections/my-vehicle/history');
+  }
 
-// Get daily checks dashboard
-async getDailyChecksDashboard() {
-  return this.request('/daily-checks/dashboard');
-}
+  /**
+   * Get driver's vehicle info with latest daily check
+   * GET /api/daily-checks/my-vehicle
+   */
+  async getDriverVehicleInfo() {
+    return this.request('/daily-checks/my-vehicle');
+  }
 
-  // ============ TRIP GENERATION (NEW) ============
+  /**
+   * Get driver's vehicle daily check history
+   * GET /api/daily-checks/my-vehicle/history?days=30
+   */
+  async getDriverVehicleCheckHistory(days = 30) {
+    return this.request(`/daily-checks/my-vehicle/history?days=${days}`);
+  }
+
+  /**
+   * Get driver's latest daily check
+   * GET /api/daily-checks/my-vehicle/latest
+   */
+  async getDriverLatestCheck() {
+    return this.request('/daily-checks/my-vehicle/latest');
+  }
+
+  // ============ TRIP GENERATION ============
   async getSystemStatus() {
     return this.request('/admin/trips/system-status');
   }
@@ -410,7 +452,6 @@ async getDailyChecksDashboard() {
       method: 'POST'
     });
   }
-
 }
 
 const transportApiService = new TransportApiService();

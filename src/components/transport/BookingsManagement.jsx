@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, X, Calendar, MapPin, Clock, DollarSign, User, Phone, CreditCard, Printer, FileText, XCircle, CheckCircle } from 'lucide-react';
+import { Search, X, Calendar, MapPin, Clock, DollarSign, User, Phone, CreditCard, Printer, FileText, XCircle, CheckCircle } from 'lucide-react';
 import transportApiService from '../../services/transportApiService';
 
 const PAYMENT_METHODS = {
@@ -17,9 +17,11 @@ const BOOKING_STATUS = {
 const BookingsManagement = () => {
   const [availableTrips, setAvailableTrips] = useState([]);
   const [todayBookings, setTodayBookings] = useState([]);
+  const [routes, setRoutes] = useState([]);
+  const [origins, setOrigins] = useState([]);
+  const [destinations, setDestinations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showBookingForm, setShowBookingForm] = useState(false);
-  const [showSearchForm, setShowSearchForm] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -43,12 +45,21 @@ const BookingsManagement = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [trips, bookings] = await Promise.all([
+      const [trips, bookings, routesData] = await Promise.all([
         transportApiService.getAvailableTrips(),
-        transportApiService.getTodayBookings()
+        transportApiService.getTodayBookings(),
+        transportApiService.getAllRoutes()
       ]);
       setAvailableTrips(trips);
       setTodayBookings(bookings);
+      setRoutes(routesData);
+      
+      // Extract unique origins and destinations
+      const uniqueOrigins = [...new Set(routesData.map(route => route.origin))].sort();
+      const uniqueDestinations = [...new Set(routesData.map(route => route.destination))].sort();
+      
+      setOrigins(uniqueOrigins);
+      setDestinations(uniqueDestinations);
     } catch (err) {
       setError('Failed to load data: ' + err.message);
     } finally {
@@ -65,9 +76,32 @@ const BookingsManagement = () => {
       const trips = await transportApiService.searchTrips(searchData);
       setAvailableTrips(trips);
       setSuccess(`Found ${trips.length} available trip(s)`);
-      setShowSearchForm(false);
     } catch (err) {
       setError('Failed to search trips: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearFilter = async () => {
+    setError('');
+    setSuccess('');
+    
+    // Reset search data to default
+    setSearchData({
+      origin: '',
+      destination: '',
+      travelDate: new Date().toISOString().split('T')[0]
+    });
+    
+    // Reload all available trips
+    try {
+      setLoading(true);
+      const trips = await transportApiService.getAvailableTrips();
+      setAvailableTrips(trips);
+      setSuccess('Filter cleared - showing all available trips');
+    } catch (err) {
+      setError('Failed to load trips: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -76,7 +110,6 @@ const BookingsManagement = () => {
   const handleSelectTrip = (trip) => {
     setSelectedTrip(trip);
     setShowBookingForm(true);
-    setShowSearchForm(false);
   };
 
   const handleCreateBooking = async (e) => {
@@ -192,27 +225,84 @@ const BookingsManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Bookings Management</h1>
-          <p className="text-gray-600 mt-1">Create bookings and manage tickets</p>
+          <p className="text-gray-600 mt-1">Filter trips and book tickets</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowSearchForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
-          >
-            <Search className="w-5 h-5" />
-            Search Trips
-          </button>
-          <button
-            onClick={() => {
-              setShowBookingForm(true);
-              setSelectedTrip(null);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            New Booking
-          </button>
+      </div>
+
+      {/* Always Visible Filter Section */}
+      <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+        <div className="flex items-center gap-2 mb-4">
+          <Search className="w-5 h-5 text-blue-600" />
+          <h2 className="text-lg font-bold text-gray-800">Filter Available Trips</h2>
         </div>
+        
+        <form onSubmit={handleSearchTrips} className="grid grid-cols-1 md:grid-cols-7 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Origin
+            </label>
+            <select
+              value={searchData.origin}
+              onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">All Origins</option>
+              {origins.map((origin) => (
+                <option key={origin} value={origin}>
+                  {origin}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Destination
+            </label>
+            <select
+              value={searchData.destination}
+              onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="">All Destinations</option>
+              {destinations.map((destination) => (
+                <option key={destination} value={destination}>
+                  {destination}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              Travel Date
+            </label>
+            <input
+              type="date"
+              value={searchData.travelDate}
+              onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div className="md:col-span-1 flex flex-col gap-2 items-end justify-end">
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Search className="w-5 h-5" />
+              Filter
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilter}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+              <X className="w-4 h-4" />
+              Clear
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Alert Messages */}
@@ -234,134 +324,23 @@ const BookingsManagement = () => {
         </div>
       )}
 
-      {/* Search Form Modal */}
-      {showSearchForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-800">Search Trips</h2>
+      {/* Booking Form Modal */}
+      {showBookingForm && selectedTrip && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-800">Complete Your Booking</h2>
               <button
-                onClick={() => setShowSearchForm(false)}
+                onClick={() => {
+                  resetBookingForm();
+                }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Origin
-                </label>
-                <input
-                  type="text"
-                  value={searchData.origin}
-                  onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., Kigali"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Destination
-                </label>
-                <input
-                  type="text"
-                  value={searchData.destination}
-                  onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., Musanze"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Travel Date
-                </label>
-                <input
-                  type="date"
-                  value={searchData.travelDate}
-                  onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-4">
-                <button
-                  onClick={handleSearchTrips}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Search
-                </button>
-                <button
-                  onClick={() => setShowSearchForm(false)}
-                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Booking Form */}
-      {showBookingForm && (
-        <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-gray-800">Create New Booking</h2>
-            <button
-              onClick={() => {
-                resetBookingForm();
-              }}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          {!selectedTrip ? (
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Select a Trip</h3>
-              <div className="grid grid-cols-1 gap-4 max-h-96 overflow-y-auto">
-                {availableTrips.map((trip) => (
-                  <button
-                    key={trip.dailyTripId}
-                    onClick={() => handleSelectTrip(trip)}
-                    className="text-left p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <MapPin className="w-5 h-5 text-blue-600" />
-                        <span className="font-bold text-gray-800">
-                          {trip.origin} → {trip.destination}
-                        </span>
-                      </div>
-                      <span className="text-lg font-bold text-blue-600">RWF {trip.price}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4" />
-                        <span>{formatDate(trip.tripDate)}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        <span>{trip.departureTime}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="font-medium">{trip.availableSeats}/{trip.totalSeats} seats available</span>
-                      </div>
-                    </div>
-                    <div className="text-xs text-gray-500 mt-2">
-                      Vehicle: {trip.vehiclePlateNo}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div>
+            <div className="p-6">
               {/* Selected Trip Display */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 mb-2">Selected Trip</h3>
@@ -373,6 +352,9 @@ const BookingsManagement = () => {
                     <div className="text-sm text-gray-600">
                       {formatDate(selectedTrip.tripDate)} at {selectedTrip.departureTime}
                     </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Vehicle: {selectedTrip.vehiclePlateNo}
+                    </div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-blue-600">RWF {selectedTrip.price}</div>
@@ -382,7 +364,7 @@ const BookingsManagement = () => {
               </div>
 
               {/* Customer Information */}
-              <div className="space-y-4">
+              <form onSubmit={handleCreateBooking} className="space-y-4">
                 <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                   <User className="w-5 h-5 text-blue-600" />
                   Customer Information
@@ -444,22 +426,23 @@ const BookingsManagement = () => {
 
                 <div className="flex items-center gap-3 pt-4 border-t">
                   <button
-                    onClick={handleCreateBooking}
+                    type="button"
+                    onClick={() => resetBookingForm()}
+                    className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
                     className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <CheckCircle className="w-5 h-5" />
                     Confirm Booking
                   </button>
-                  <button
-                    onClick={() => setSelectedTrip(null)}
-                    className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                  >
-                    Change Trip
-                  </button>
                 </div>
-              </div>
+              </form>
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -548,54 +531,71 @@ const BookingsManagement = () => {
         </div>
       </div>
 
-      {/* Available Trips */}
-      {!showBookingForm && availableTrips.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-800">Available Trips ({availableTrips.length})</h2>
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {availableTrips.map((trip) => (
-              <div
-                key={trip.dailyTripId}
-                className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-5 h-5 text-blue-600" />
-                    <span className="font-bold text-gray-800">
-                      {trip.origin} → {trip.destination}
-                    </span>
-                  </div>
-                </div>
-                <div className="space-y-2 text-sm text-gray-600 mb-4">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>{formatDate(trip.tripDate)}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4" />
-                    <span>{trip.departureTime}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-4 h-4" />
-                    <span className="font-bold text-blue-600">RWF {trip.price}</span>
-                  </div>
-                  <div className="text-xs">
-                    {trip.availableSeats}/{trip.totalSeats} seats available
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleSelectTrip(trip)}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Book Now
-                </button>
-              </div>
-            ))}
-          </div>
+      {/* Available Trips Cards */}
+      <div className="bg-white rounded-lg shadow-md border border-gray-200">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-xl font-bold text-gray-800">Available Trips ({availableTrips.length})</h2>
+          <p className="text-sm text-gray-600 mt-1">Click "Book Now" on any trip to proceed with booking</p>
         </div>
-      )}
+        <div className="p-6">
+          {availableTrips.length === 0 ? (
+            <div className="text-center py-12">
+              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 text-lg">No trips available</p>
+              <p className="text-gray-400 text-sm mt-2">Try adjusting your filters or check back later</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {availableTrips.map((trip) => (
+                <div
+                  key={trip.dailyTripId}
+                  className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-5 h-5 text-blue-600" />
+                      <span className="font-bold text-gray-800">
+                        {trip.origin} → {trip.destination}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-600 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-4 h-4" />
+                      <span>{formatDate(trip.tripDate)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4" />
+                      <span>{trip.departureTime}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      <span className="font-bold text-blue-600">RWF {trip.price}</span>
+                    </div>
+                    <div className="text-xs">
+                      {trip.availableSeats}/{trip.totalSeats} seats available
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Vehicle: {trip.vehiclePlateNo}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleSelectTrip(trip)}
+                    disabled={trip.availableSeats === 0}
+                    className={`w-full px-4 py-2 rounded-lg transition-colors ${
+                      trip.availableSeats === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {trip.availableSeats === 0 ? 'Fully Booked' : 'Book Now'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
