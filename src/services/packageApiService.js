@@ -1,4 +1,4 @@
-// packageApiService.js - COMPLETE UPDATED VERSION
+// packageApiService.js - COMPLETE VERSION WITH REPORTS SUPPORT
 
 import { TRANSPORT_API_URL } from '../utils/constants';
 
@@ -63,21 +63,21 @@ class PackageApiService {
   // ============ USER-SPECIFIC ENDPOINTS ============
   
   /**
-   * ✅ NEW: Get packages sent by current user
+   * ✅ Get packages sent by current user
    */
   async getMySentPackages() {
     return this.request('/packages/my-sent-packages');
   }
 
   /**
-   * ✅ NEW: Get packages where current user is receiver
+   * ✅ Get packages where current user is receiver
    */
   async getMyReceivedPackages() {
     return this.request('/packages/my-received-packages');
   }
 
   /**
-   * ✅ NEW: Get package statistics for current user
+   * ✅ Get package statistics for current user
    */
   async getMyStatistics() {
     return this.request('/packages/my-statistics');
@@ -133,6 +133,231 @@ class PackageApiService {
 
   async getCollectedPackages() {
     return this.request('/packages/collected');
+  }
+
+  // ============ ADMIN REPORTS ============
+  
+  /**
+   * ✅ NEW: Get all packages (for reports - ADMIN/MANAGER)
+   * Combines all package statuses for comprehensive reporting
+   */
+  async getAllPackages() {
+    try {
+      // Get all packages by combining different status endpoints
+      const [inTransit, arrived, collected] = await Promise.all([
+        this.getInTransitPackages(),
+        this.getArrivedPackages(),
+        this.getCollectedPackages()
+      ]);
+      
+      // Combine all packages into a single array
+      const allPackages = [...inTransit, ...arrived, ...collected];
+      
+      console.log(`✅ Loaded ${allPackages.length} total packages for reports`);
+      return allPackages;
+    } catch (error) {
+      console.error('❌ Error fetching all packages:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Get package statistics for reports
+   * Returns aggregated data for admin dashboard
+   */
+  async getPackageStatistics() {
+    try {
+      const allPackages = await this.getAllPackages();
+      
+      // Calculate comprehensive statistics
+      const stats = {
+        // Count by status
+        total: allPackages.length,
+        inTransit: allPackages.filter(p => p.packageStatus === 'IN_TRANSIT').length,
+        arrived: allPackages.filter(p => p.packageStatus === 'ARRIVED').length,
+        collected: allPackages.filter(p => p.packageStatus === 'COLLECTED').length,
+        cancelled: allPackages.filter(p => p.packageStatus === 'CANCELLED').length,
+        
+        // Revenue statistics
+        totalRevenue: allPackages
+          .filter(p => p.paymentStatus === 'PAID')
+          .reduce((sum, p) => sum + parseFloat(p.price || 0), 0),
+        
+        averagePrice: allPackages.length > 0
+          ? allPackages
+              .filter(p => p.price)
+              .reduce((sum, p) => sum + parseFloat(p.price || 0), 0) / 
+              allPackages.filter(p => p.price).length
+          : 0,
+        
+        // Payment method breakdown
+        paymentMethods: allPackages
+          .filter(p => p.paymentStatus === 'PAID')
+          .reduce((acc, p) => {
+            const method = p.paymentMethod || 'UNKNOWN';
+            acc[method] = (acc[method] || 0) + parseFloat(p.price || 0);
+            return acc;
+          }, {}),
+        
+        // By route (top 10)
+        byRoute: Object.entries(
+          allPackages.reduce((acc, p) => {
+            const route = `${p.origin} - ${p.destination}`;
+            acc[route] = (acc[route] || 0) + 1;
+            return acc;
+          }, {})
+        )
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .reduce((acc, [route, count]) => {
+            acc[route] = count;
+            return acc;
+          }, {}),
+        
+        // Weight statistics
+        totalWeight: allPackages
+          .filter(p => p.packageWeight)
+          .reduce((sum, p) => sum + parseFloat(p.packageWeight || 0), 0),
+        
+        averageWeight: allPackages.filter(p => p.packageWeight).length > 0
+          ? allPackages
+              .filter(p => p.packageWeight)
+              .reduce((sum, p) => sum + parseFloat(p.packageWeight || 0), 0) / 
+              allPackages.filter(p => p.packageWeight).length
+          : 0,
+        
+        // Fragile packages
+        fragileCount: allPackages.filter(p => p.isFragile).length,
+        
+        // Delivery performance
+        deliveredOnTime: allPackages.filter(p => 
+          p.packageStatus === 'COLLECTED' && 
+          p.collectedAt && 
+          p.expectedArrivalTime &&
+          new Date(p.collectedAt) <= new Date(p.expectedArrivalTime)
+        ).length,
+        
+        // By day of week
+        byDayOfWeek: allPackages.reduce((acc, p) => {
+          const day = new Date(p.bookingDate).toLocaleDateString('en-US', { weekday: 'long' });
+          acc[day] = (acc[day] || 0) + 1;
+          return acc;
+        }, {})
+      };
+      
+      console.log('✅ Package statistics calculated:', stats);
+      return stats;
+    } catch (error) {
+      console.error('❌ Error calculating package statistics:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Get packages within date range (for filtered reports)
+   */
+  async getPackagesByDateRange(startDate, endDate) {
+    try {
+      const allPackages = await this.getAllPackages();
+      
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      
+      const filtered = allPackages.filter(p => {
+        const bookingDate = new Date(p.bookingDate);
+        return bookingDate >= start && bookingDate <= end;
+      });
+      
+      console.log(`✅ Filtered ${filtered.length} packages from ${startDate} to ${endDate}`);
+      return filtered;
+    } catch (error) {
+      console.error('❌ Error filtering packages by date:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Get revenue by date range (for financial reports)
+   */
+  async getRevenueByDateRange(startDate, endDate) {
+    try {
+      const packages = await this.getPackagesByDateRange(startDate, endDate);
+      
+      const paidPackages = packages.filter(p => p.paymentStatus === 'PAID');
+      
+      const revenue = {
+        total: paidPackages.reduce((sum, p) => sum + parseFloat(p.price || 0), 0),
+        count: paidPackages.length,
+        average: paidPackages.length > 0
+          ? paidPackages.reduce((sum, p) => sum + parseFloat(p.price || 0), 0) / paidPackages.length
+          : 0,
+        
+        // Daily breakdown
+        byDay: paidPackages.reduce((acc, p) => {
+          const date = new Date(p.bookingDate).toLocaleDateString();
+          acc[date] = (acc[date] || 0) + parseFloat(p.price || 0);
+          return acc;
+        }, {}),
+        
+        // By payment method
+        byPaymentMethod: paidPackages.reduce((acc, p) => {
+          const method = p.paymentMethod || 'UNKNOWN';
+          acc[method] = (acc[method] || 0) + parseFloat(p.price || 0);
+          return acc;
+        }, {})
+      };
+      
+      console.log(`✅ Revenue calculated for ${startDate} to ${endDate}:`, revenue.total);
+      return revenue;
+    } catch (error) {
+      console.error('❌ Error calculating revenue:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ✅ NEW: Get top performing routes (for operations reports)
+   */
+  async getTopRoutes(limit = 10) {
+    try {
+      const allPackages = await this.getAllPackages();
+      
+      const routeStats = allPackages.reduce((acc, p) => {
+        const route = `${p.origin} - ${p.destination}`;
+        if (!acc[route]) {
+          acc[route] = {
+            count: 0,
+            revenue: 0,
+            avgWeight: 0,
+            totalWeight: 0
+          };
+        }
+        acc[route].count++;
+        if (p.paymentStatus === 'PAID') {
+          acc[route].revenue += parseFloat(p.price || 0);
+        }
+        if (p.packageWeight) {
+          acc[route].totalWeight += parseFloat(p.packageWeight || 0);
+        }
+        return acc;
+      }, {});
+      
+      // Calculate averages and sort
+      const routes = Object.entries(routeStats)
+        .map(([route, stats]) => ({
+          route,
+          ...stats,
+          avgWeight: stats.count > 0 ? stats.totalWeight / stats.count : 0
+        }))
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, limit);
+      
+      console.log(`✅ Top ${limit} routes calculated`);
+      return routes;
+    } catch (error) {
+      console.error('❌ Error getting top routes:', error);
+      throw error;
+    }
   }
 }
 

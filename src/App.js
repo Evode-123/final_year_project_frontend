@@ -14,6 +14,7 @@ import DriverDashboard from './components/dashboard/DriverDashboard';
 import ReceptionistDashboard from './components/dashboard/ReceptionistDashboard';
 import OtherUserDashboard from './components/dashboard/OtherUserDashboard';
 import AdminUserManagement from './components/admin/AdminUserManagement';
+import AdminReports from './components/admin/AdminReports';
 import SettingsPage from './components/settings/SettingsPage';
 import TransportHub from './components/transport/TransportHub';
 import PackageHub from './components/packages/PackageHub';
@@ -158,6 +159,9 @@ const App = () => {
       
       case 'users':
         return user.role === USER_ROLES.ADMIN ? <AdminUserManagement /> : <DashboardContent />;
+      
+      case 'reports':
+        return (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.MANAGER) ? <AdminReports /> : <DashboardContent />;
       
       case 'settings':
         return <SettingsPage />;

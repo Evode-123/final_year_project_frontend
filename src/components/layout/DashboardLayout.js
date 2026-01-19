@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Bell, Search, Menu, User, LayoutDashboard, Settings, Car, Package, Shield, Ticket, MessageSquare, AlertCircle, Calendar, History, PackageCheck } from 'lucide-react';
+import { LogOut, Bell, Search, Menu, User, LayoutDashboard, Settings, Car, Package, Shield, Ticket, MessageSquare, AlertCircle, Calendar, History, PackageCheck, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { USER_ROLES } from '../../utils/constants';
 import feedbackApiService from '../../services/feedbackApiService';
@@ -50,8 +50,9 @@ const DashboardLayout = ({ children, activePage, setActivePage }) => {
       { icon: <Shield className="w-5 h-5" />, label: 'Vehicle Safety', id: 'safety' },
       { icon: <AlertCircle className="w-5 h-5" />, label: 'Incidents', id: 'incidents' },
       { icon: <MessageSquare className="w-5 h-5" />, label: 'Feedback', id: 'feedback', badgeType: 'feedback' },
+      { icon: <FileText className="w-5 h-5" />, label: 'Reports', id: 'reports' },
       { icon: <User className="w-5 h-5" />, label: 'Users', id: 'users' },
-      { icon: <Settings className="w-5 h-5" />, label: 'Settings', id: 'settings' },
+      // Settings removed from sidebar - accessible via profile click
     ],
     [USER_ROLES.MANAGER]: [
       { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', id: 'dashboard' },
@@ -60,6 +61,7 @@ const DashboardLayout = ({ children, activePage, setActivePage }) => {
       { icon: <Shield className="w-5 h-5" />, label: 'Vehicle Safety', id: 'safety' },
       { icon: <AlertCircle className="w-5 h-5" />, label: 'Incidents', id: 'incidents' },
       { icon: <MessageSquare className="w-5 h-5" />, label: 'Feedback', id: 'feedback', badgeType: 'feedback' },
+      { icon: <FileText className="w-5 h-5" />, label: 'Reports', id: 'reports' },
       { icon: <Settings className="w-5 h-5" />, label: 'Settings', id: 'settings' },
     ],
     [USER_ROLES.RECEPTIONIST]: [

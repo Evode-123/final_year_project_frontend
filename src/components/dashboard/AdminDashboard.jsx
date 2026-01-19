@@ -81,10 +81,25 @@ const AdminDashboard = () => {
       const availableVehicles = vehicles.filter(v => v.status === 'AVAILABLE').length;
       const maintenanceVehicles = vehicles.filter(v => v.status === 'MAINTENANCE').length;
 
-      // Calculate booking statistics
-      const todayRevenue = todayBookings.reduce((sum, booking) => 
-        sum + (booking.totalAmount || 0), 0
-      );
+      // ✅ FIXED: Calculate booking revenue - check multiple possible field names
+      console.log('📊 Today\'s Bookings:', todayBookings); // Debug log
+      
+      const todayRevenue = todayBookings.reduce((sum, booking) => {
+        // Try different field names that might contain the price/amount
+        const amount = booking.totalAmount || 
+                      booking.amount || 
+                      booking.price || 
+                      booking.fare || 
+                      booking.totalPrice || 
+                      booking.ticketPrice || 
+                      booking.cost ||
+                      0;
+        
+        console.log(`💰 Booking ${booking.ticketNumber || booking.id}: ${amount} RWF`); // Debug log
+        return sum + parseFloat(amount);
+      }, 0);
+
+      console.log(`✅ Total Revenue: ${todayRevenue} RWF`); // Debug log
 
       // Get upcoming trips (next 3 days)
       const upcomingTrips = availableTrips
@@ -98,20 +113,33 @@ const AdminDashboard = () => {
 
       // Build recent activities
       const recentActivities = [
-        ...todayBookings.slice(0, 3).map(b => ({
-          type: 'booking',
-          title: 'New Booking',
-          description: `${b.passengerName} booked ticket #${b.ticketNumber}`,
-          time: new Date(b.bookingDate),
-          icon: 'ticket'
-        })),
-        ...arrivedPackages.slice(0, 2).map(p => ({
-          type: 'package',
-          title: 'Package Arrived',
-          description: `Package ${p.trackingNumber} arrived`,
-          time: new Date(p.arrivalTime || p.createdAt),
-          icon: 'package'
-        }))
+        ...todayBookings.slice(0, 3).map(b => {
+          // Get customer name from the correct nested field
+          const customerName = b.customer?.names || 
+                              b.customer?.name ||
+                              'Guest';
+          
+          return {
+            type: 'booking',
+            title: 'New Booking',
+            description: `${customerName} booked ticket #${b.ticketNumber}`,
+            time: new Date(b.bookingDate),
+            icon: 'ticket'
+          };
+        }),
+        ...arrivedPackages.slice(0, 2).map(p => {
+          // Handle package arrival time with multiple fallbacks
+          const arrivalTime = p.actualArrivalTime ||
+                             new Date(); // Use current time as last resort
+          
+          return {
+            type: 'package',
+            title: 'Package Arrived',
+            description: `Package ${p.trackingNumber} arrived at destination`,
+            time: new Date(arrivalTime),
+            icon: 'package'
+          };
+        })
       ].sort((a, b) => b.time - a.time).slice(0, 5);
 
       // System health checks

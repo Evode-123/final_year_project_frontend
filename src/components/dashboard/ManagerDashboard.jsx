@@ -101,7 +101,7 @@ const ManagerDashboard = () => {
         ...todayBookings.slice(0, 2).map(b => ({
           type: 'booking',
           title: 'New Booking',
-          description: `${b.passengerName} booked ticket #${b.ticketNumber}`,
+          description: `${b.customer?.names} booked ticket #${b.ticketNumber}`,
           time: new Date(b.bookingDate),
           icon: 'ticket'
         })),
