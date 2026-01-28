@@ -141,8 +141,29 @@ const DriverDashboard = () => {
   );
 
   const TripCard = ({ trip }) => {
+    // Parse the date string (format: "2026-01-28")
     const tripDate = new Date(trip.tripDate);
     const isToday = tripDate.toDateString() === new Date().toDateString();
+
+    // Parse time string (format: "08:30:00" or "08:30")
+    const formatTime = (timeString) => {
+      if (!timeString) return 'N/A';
+      
+      try {
+        // Split the time string and take first two parts (hours and minutes)
+        const [hours, minutes] = timeString.split(':');
+        const hour = parseInt(hours, 10);
+        const minute = parseInt(minutes, 10);
+        
+        // Format as 12-hour time
+        const period = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+        return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+      } catch (e) {
+        console.error('Error formatting time:', timeString, e);
+        return timeString; // Return original if parsing fails
+      }
+    };
 
     return (
       <div className={`p-5 rounded-xl border-2 transition-all ${
@@ -164,7 +185,7 @@ const DriverDashboard = () => {
           <div className="flex items-center gap-1 text-blue-600">
             <Clock className="w-4 h-4" />
             <span className="text-sm font-semibold">
-              {new Date(trip.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatTime(trip.departureTime)}
             </span>
           </div>
         </div>
@@ -172,22 +193,22 @@ const DriverDashboard = () => {
         <div className="space-y-2 mb-3">
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-semibold text-gray-900">{trip.origin}</span>
+            <span className="text-sm font-semibold text-gray-900">{trip.origin || 'N/A'}</span>
           </div>
           <div className="flex items-center gap-2 pl-6">
             <MapPin className="w-4 h-4 text-red-600" />
-            <span className="text-sm font-semibold text-gray-900">{trip.destination}</span>
+            <span className="text-sm font-semibold text-gray-900">{trip.destination || 'N/A'}</span>
           </div>
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t border-gray-200">
           <div className="flex items-center gap-2 text-gray-600 text-xs">
             <Car className="w-3 h-3" />
-            <span>{trip.vehicleRegistration}</span>
+            <span>{trip.vehiclePlateNo || 'N/A'}</span>
           </div>
           <div className="flex items-center gap-2 text-gray-600 text-xs">
             <Activity className="w-3 h-3" />
-            <span>{trip.bookedSeats || 0} / {trip.capacity} seats</span>
+            <span>Status: {trip.status || 'SCHEDULED'}</span>
           </div>
         </div>
       </div>
