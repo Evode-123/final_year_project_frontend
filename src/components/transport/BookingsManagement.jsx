@@ -1,5 +1,12 @@
+// ============================================
+// UPDATED BookingsManagement.jsx (For Admin/Manager/Receptionist)
+// This version bypasses payment for staff bookings
+// ============================================
+
 import React, { useState, useEffect } from 'react';
-import { Search, X, Calendar, MapPin, Clock, DollarSign, User, Phone, CreditCard, Printer, FileText, XCircle, CheckCircle } from 'lucide-react';
+import { Search, X, Calendar, MapPin, Clock, DollarSign, User, Phone, CreditCard, Printer, FileText, XCircle, CheckCircle, Loader } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { USER_ROLES } from '../../utils/constants';
 import transportApiService from '../../services/transportApiService';
 
 const PAYMENT_METHODS = {
@@ -15,6 +22,7 @@ const BOOKING_STATUS = {
 };
 
 const BookingsManagement = () => {
+  const { user } = useAuth();
   const [availableTrips, setAvailableTrips] = useState([]);
   const [todayBookings, setTodayBookings] = useState([]);
   const [routes, setRoutes] = useState([]);
@@ -38,6 +46,9 @@ const BookingsManagement = () => {
     paymentMethod: PAYMENT_METHODS.CASH
   });
 
+  // ✅ Check if user is staff
+  const isStaff = [USER_ROLES.ADMIN, USER_ROLES.MANAGER, USER_ROLES.RECEPTIONIST].includes(user?.role);
+
   useEffect(() => {
     loadData();
   }, []);
@@ -54,7 +65,6 @@ const BookingsManagement = () => {
       setTodayBookings(bookings);
       setRoutes(routesData);
       
-      // Extract unique origins and destinations
       const uniqueOrigins = [...new Set(routesData.map(route => route.origin))].sort();
       const uniqueDestinations = [...new Set(routesData.map(route => route.destination))].sort();
       
@@ -87,14 +97,12 @@ const BookingsManagement = () => {
     setError('');
     setSuccess('');
     
-    // Reset search data to default
     setSearchData({
       origin: '',
       destination: '',
       travelDate: new Date().toISOString().split('T')[0]
     });
     
-    // Reload all available trips
     try {
       setLoading(true);
       const trips = await transportApiService.getAvailableTrips();
@@ -112,6 +120,7 @@ const BookingsManagement = () => {
     setShowBookingForm(true);
   };
 
+  // ✅ UPDATED: Use new payment-enabled endpoint
   const handleCreateBooking = async (e) => {
     e.preventDefault();
     setError('');
@@ -123,12 +132,18 @@ const BookingsManagement = () => {
     }
 
     try {
-      const booking = await transportApiService.createBooking({
+      setLoading(true);
+
+      // ✅ Staff bookings bypass payment
+      const bookingPayload = {
         dailyTripId: selectedTrip.dailyTripId,
         customerName: bookingData.customerName,
         customerPhone: bookingData.customerPhone,
-        paymentMethod: bookingData.paymentMethod
-      });
+        paymentMethod: bookingData.paymentMethod,
+        requiresPayment: false // Staff always bypasses payment
+      };
+
+      const booking = await transportApiService.createBookingWithPayment(bookingPayload);
 
       setSuccess(`Booking created successfully! Ticket: ${booking.ticketNumber}`);
       
@@ -142,6 +157,8 @@ const BookingsManagement = () => {
       await loadData();
     } catch (err) {
       setError('Failed to create booking: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -188,6 +205,7 @@ const BookingsManagement = () => {
     });
     setSelectedTrip(null);
     setShowBookingForm(false);
+    setLoading(false);
   };
 
   const getStatusBadgeColor = (status) => {
@@ -211,7 +229,7 @@ const BookingsManagement = () => {
     });
   };
 
-  if (loading) {
+  if (loading && !showBookingForm) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -225,11 +243,19 @@ const BookingsManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Bookings Management</h1>
-          <p className="text-gray-600 mt-1">Filter trips and book tickets</p>
+          <p className="text-gray-600 mt-1">Filter trips and book tickets for walk-in customers</p>
         </div>
       </div>
 
-      {/* Always Visible Filter Section */}
+      {/* ✅ Staff Info Banner */}
+      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+        <p className="text-blue-800 font-medium">
+          💼 <strong>Staff Booking Mode:</strong> Bookings created here are immediately confirmed. 
+          Customer pays cash in office - no online payment required.
+        </p>
+      </div>
+
+      {/* Filter Section */}
       <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
         <div className="flex items-center gap-2 mb-4">
           <Search className="w-5 h-5 text-blue-600" />
@@ -329,11 +355,9 @@ const BookingsManagement = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-800">Complete Your Booking</h2>
+              <h2 className="text-xl font-bold text-gray-800">Complete Booking</h2>
               <button
-                onClick={() => {
-                  resetBookingForm();
-                }}
+                onClick={() => resetBookingForm()}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <X className="w-6 h-6" />
@@ -381,6 +405,7 @@ const BookingsManagement = () => {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="John Doe"
                     required
+                    disabled={loading}
                   />
                 </div>
 
@@ -397,6 +422,7 @@ const BookingsManagement = () => {
                       className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="0788123456"
                       required
+                      disabled={loading}
                     />
                   </div>
                 </div>
@@ -411,33 +437,48 @@ const BookingsManagement = () => {
                         key={key}
                         type="button"
                         onClick={() => setBookingData({ ...bookingData, paymentMethod: value })}
+                        disabled={loading}
                         className={`p-3 rounded-lg border-2 transition-colors ${
                           bookingData.paymentMethod === value
                             ? 'border-blue-600 bg-blue-50 text-blue-700'
                             : 'border-gray-300 bg-white text-gray-700 hover:border-blue-300'
-                        }`}
+                        } disabled:opacity-50`}
                       >
                         <CreditCard className="w-5 h-5 mx-auto mb-1" />
                         <div className="text-xs font-medium">{value.replace('_', ' ')}</div>
                       </button>
                     ))}
                   </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    💡 Customer pays cash in office. Recording payment method for reference only.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-3 pt-4 border-t">
                   <button
                     type="button"
                     onClick={() => resetBookingForm()}
-                    className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                    disabled={loading}
+                    className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={loading}
+                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
-                    <CheckCircle className="w-5 h-5" />
-                    Confirm Booking
+                    {loading ? (
+                      <>
+                        <Loader className="w-5 h-5 animate-spin" />
+                        Creating Booking...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5" />
+                        Confirm Booking
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
@@ -535,7 +576,7 @@ const BookingsManagement = () => {
       <div className="bg-white rounded-lg shadow-md border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold text-gray-800">Available Trips ({availableTrips.length})</h2>
-          <p className="text-sm text-gray-600 mt-1">Click "Book Now" on any trip to proceed with booking</p>
+          <p className="text-sm text-gray-600 mt-1">Click "Book Now" to create a booking for a walk-in customer</p>
         </div>
         <div className="p-6">
           {availableTrips.length === 0 ? (

@@ -42,16 +42,29 @@ const DriverDashboard = () => {
       const [
         upcomingTrips,
         myIncidents,
-        vehicleInfo,
-        latestCheck,
+        vehicleInfoResponse,
         inspectionStatus
       ] = await Promise.all([
         tripApiService.getMyUpcomingTrips().catch(() => []),
         incidentApiService.getMyIncidents().catch(() => []),
         transportApiService.getDriverVehicleInfo().catch(() => null),
-        transportApiService.getDriverLatestCheck().catch(() => null),
         transportApiService.getDriverVehicleInspectionStatus().catch(() => null)
       ]);
+
+      console.log('Vehicle Info Response:', vehicleInfoResponse); // Debug log
+
+      // Extract vehicle info and latest check from response
+      let vehicleInfo = null;
+      let latestCheck = null;
+
+      if (vehicleInfoResponse) {
+        // The API returns { hasVehicle, vehicle, latestCheck }
+        vehicleInfo = vehicleInfoResponse.vehicle || null;
+        latestCheck = vehicleInfoResponse.latestCheck || null;
+      }
+
+      console.log('Processed Vehicle Info:', vehicleInfo); // Debug log
+      console.log('Latest Check:', latestCheck); // Debug log
 
       // Separate today's trips
       const today = new Date();
@@ -211,7 +224,7 @@ const DriverDashboard = () => {
       </div>
 
       {/* Vehicle Safety Alert */}
-      {dashboardData.vehicleCheck && dashboardData.vehicleCheck.hasProblem && (
+      {dashboardData.vehicleCheck && dashboardData.vehicleCheck.hasProblems && (
         <div className="p-4 rounded-xl border-2 bg-red-50 border-red-200">
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-6 h-6 flex-shrink-0 text-red-600" />
@@ -279,46 +292,75 @@ const DriverDashboard = () => {
       </div>
 
       {/* Vehicle Status */}
-      {dashboardData.vehicleInfo && (
+      {dashboardData.vehicleInfo ? (
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900">Assigned Vehicle</h2>
             <Car className="w-5 h-5 text-gray-400" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Registration</p>
-              <p className="text-xl font-bold text-gray-900">{dashboardData.vehicleInfo.registrationNumber}</p>
+            <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+              <p className="text-sm text-gray-600 mb-1 font-medium">Registration</p>
+              <p className="text-2xl font-bold text-gray-900">{dashboardData.vehicleInfo.plateNo || 'N/A'}</p>
             </div>
-            <div className="p-4 bg-gradient-to-br from-green-50 to-teal-50 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Vehicle Type</p>
-              <p className="text-xl font-bold text-gray-900">{dashboardData.vehicleInfo.vehicleType}</p>
+            <div className="p-4 bg-gradient-to-br from-green-50 to-teal-50 rounded-xl border border-green-100">
+              <p className="text-sm text-gray-600 mb-1 font-medium">Vehicle Type</p>
+              <p className="text-2xl font-bold text-gray-900">{dashboardData.vehicleInfo.vehicleType || 'N/A'}</p>
             </div>
-            <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl">
-              <p className="text-sm text-gray-600 mb-1">Capacity</p>
-              <p className="text-xl font-bold text-gray-900">{dashboardData.vehicleInfo.capacity} seats</p>
+            <div className="p-4 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+              <p className="text-sm text-gray-600 mb-1 font-medium">Capacity</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {dashboardData.vehicleInfo.capacity ? `${dashboardData.vehicleInfo.capacity} seats` : 'N/A'}
+              </p>
             </div>
           </div>
           
-          {dashboardData.vehicleCheck && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-xl">
+          {/* Last Daily Check */}
+          {dashboardData.vehicleCheck ? (
+            <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-gray-700">Last Daily Check</p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {new Date(dashboardData.vehicleCheck.checkDate).toLocaleString()}
+                    {new Date(dashboardData.vehicleCheck.checkDate).toLocaleDateString()} at{' '}
+                    {new Date(dashboardData.vehicleCheck.createdAt).toLocaleTimeString([], { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
                   </p>
                 </div>
                 <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  dashboardData.vehicleCheck.hasProblem 
+                  dashboardData.vehicleCheck.hasProblems 
                     ? 'bg-red-100 text-red-700' 
                     : 'bg-green-100 text-green-700'
                 }`}>
-                  {dashboardData.vehicleCheck.hasProblem ? '⚠ Issues Found' : '✓ All Good'}
+                  {dashboardData.vehicleCheck.hasProblems ? '⚠ Issues Found' : '✓ All Good'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 p-4 bg-yellow-50 rounded-xl border border-yellow-200">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                <div>
+                  <p className="text-sm font-semibold text-yellow-800">No Daily Check Found</p>
+                  <p className="text-xs text-yellow-700 mt-1">Please submit a daily vehicle check</p>
                 </div>
               </div>
             </div>
           )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900">Assigned Vehicle</h2>
+            <Car className="w-5 h-5 text-gray-400" />
+          </div>
+          <div className="text-center py-8">
+            <Car className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">No Vehicle Assigned</p>
+            <p className="text-gray-400 text-sm mt-1">Please contact your manager for vehicle assignment</p>
+          </div>
         </div>
       )}
 

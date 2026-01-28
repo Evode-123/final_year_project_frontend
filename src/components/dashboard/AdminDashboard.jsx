@@ -14,7 +14,9 @@ import {
   Activity,
   ArrowUp,
   ArrowDown,
-  Loader
+  Loader,
+  Truck,
+  PackageCheck
 } from 'lucide-react';
 import transportApiService from '../../services/transportApiService';
 import packageApiService from '../../services/packageApiService';
@@ -28,7 +30,14 @@ const AdminDashboard = () => {
     users: { total: 0, active: 0, inactive: 0 },
     vehicles: { total: 0, available: 0, maintenance: 0 },
     bookings: { today: 0, thisWeek: 0, revenue: 0 },
-    packages: { inTransit: 0, arrived: 0, collected: 0 },
+    packages: { 
+      total: 0,
+      inTransit: 0, 
+      arrived: 0, 
+      collected: 0,
+      cancelled: 0,
+      totalRevenue: 0
+    },
     incidents: { total: 0, critical: 0, unresolved: 0 },
     feedback: { total: 0, positive: 0, negative: 0, averageRating: 0 },
     recentActivities: [],
@@ -73,6 +82,11 @@ const AdminDashboard = () => {
         transportApiService.getInspectionDashboard().catch(() => ({}))
       ]);
 
+      // ✅ Debug logging for bookings structure
+      console.log('=== BOOKING DATA DEBUG ===');
+      console.log('Sample booking:', todayBookings[0]);
+      console.log('========================');
+
       // Calculate user statistics
       const activeUsers = Array.isArray(users) ? users.filter(u => u.enabled).length : 0;
       const inactiveUsers = Array.isArray(users) ? users.filter(u => !u.enabled).length : 0;
@@ -81,11 +95,8 @@ const AdminDashboard = () => {
       const availableVehicles = vehicles.filter(v => v.status === 'AVAILABLE').length;
       const maintenanceVehicles = vehicles.filter(v => v.status === 'MAINTENANCE').length;
 
-      // ✅ FIXED: Calculate booking revenue - check multiple possible field names
-      console.log('📊 Today\'s Bookings:', todayBookings); // Debug log
-      
+      // ✅ Calculate booking revenue
       const todayRevenue = todayBookings.reduce((sum, booking) => {
-        // Try different field names that might contain the price/amount
         const amount = booking.totalAmount || 
                       booking.amount || 
                       booking.price || 
@@ -94,12 +105,16 @@ const AdminDashboard = () => {
                       booking.ticketPrice || 
                       booking.cost ||
                       0;
-        
-        console.log(`💰 Booking ${booking.ticketNumber || booking.id}: ${amount} RWF`); // Debug log
         return sum + parseFloat(amount);
       }, 0);
 
-      console.log(`✅ Total Revenue: ${todayRevenue} RWF`); // Debug log
+      // ✅ Calculate package statistics and revenue
+      const allPackages = [...inTransitPackages, ...arrivedPackages, ...collectedPackages];
+      
+      const packageRevenue = allPackages.reduce((sum, pkg) => {
+        const amount = parseFloat(pkg.price || 0);
+        return sum + amount;
+      }, 0);
 
       // Get upcoming trips (next 3 days)
       const upcomingTrips = availableTrips
@@ -111,36 +126,90 @@ const AdminDashboard = () => {
         })
         .slice(0, 5);
 
-      // Build recent activities
-      const recentActivities = [
-        ...todayBookings.slice(0, 3).map(b => {
-          // Get customer name from the correct nested field
-          const customerName = b.customer?.names || 
-                              b.customer?.name ||
-                              'Guest';
-          
-          return {
-            type: 'booking',
-            title: 'New Booking',
-            description: `${customerName} booked ticket #${b.ticketNumber}`,
-            time: new Date(b.bookingDate),
-            icon: 'ticket'
-          };
-        }),
-        ...arrivedPackages.slice(0, 2).map(p => {
-          // Handle package arrival time with multiple fallbacks
-          const arrivalTime = p.actualArrivalTime ||
-                             new Date(); // Use current time as last resort
-          
-          return {
-            type: 'package',
-            title: 'Package Arrived',
-            description: `Package ${p.trackingNumber} arrived at destination`,
-            time: new Date(arrivalTime),
-            icon: 'package'
-          };
-        })
-      ].sort((a, b) => b.time - a.time).slice(0, 5);
+      // ✅ Build recent activities with proper field extraction (SAME AS MANAGER)
+      const recentActivities = [];
+
+      // Add booking activities with robust field extraction
+      todayBookings.slice(0, 3).forEach(b => {
+        // Extract customer name
+        const customerName = b.customer?.names || 
+                            b.customer?.name ||
+                            b.customerName ||
+                            b.passengerName ||
+                            'Guest';
+        
+        // ✅ Extract origin and destination from multiple possible locations
+        const origin = b.origin || 
+                      b.route?.origin || 
+                      b.dailyTrip?.route?.origin ||
+                      b.trip?.origin ||
+                      'Origin';
+        
+        const destination = b.destination || 
+                           b.route?.destination || 
+                           b.dailyTrip?.route?.destination ||
+                           b.trip?.destination ||
+                           'Destination';
+        
+        recentActivities.push({
+          type: 'booking',
+          title: 'New Booking',
+          description: `${customerName} booked ticket #${b.ticketNumber} (${origin} → ${destination})`,
+          time: new Date(b.bookingDate || new Date()),
+          icon: 'ticket'
+        });
+      });
+
+      // ✅ Add IN_TRANSIT package activities
+      inTransitPackages.slice(0, 2).forEach(p => {
+        recentActivities.push({
+          type: 'package_booked',
+          title: 'Package Booked',
+          description: `${p.trackingNumber}: ${p.senderNames || 'Sender'} → ${p.receiverNames || 'Receiver'}`,
+          time: new Date(p.bookingDate || new Date()),
+          icon: 'package_booked'
+        });
+      });
+
+      // ✅ Add ARRIVED package activities
+      arrivedPackages.slice(0, 2).forEach(p => {
+        const arrivalTime = p.actualArrivalTime || 
+                           p.expectedArrivalTime ||
+                           p.bookingDate || 
+                           new Date();
+        
+        const destination = p.destination || 
+                          p.dailyTrip?.route?.destination ||
+                          'destination';
+        
+        recentActivities.push({
+          type: 'package_arrived',
+          title: 'Package Arrived',
+          description: `${p.trackingNumber} arrived at ${destination}`,
+          time: new Date(arrivalTime),
+          icon: 'package_arrived'
+        });
+      });
+
+      // ✅ Add COLLECTED package activities
+      collectedPackages.slice(0, 2).forEach(p => {
+        const collectionTime = p.collectedAt || 
+                              p.actualArrivalTime ||
+                              p.bookingDate || 
+                              new Date();
+        
+        recentActivities.push({
+          type: 'package_collected',
+          title: 'Package Collected',
+          description: `${p.trackingNumber} collected by ${p.collectedByName || p.receiverNames || 'recipient'}`,
+          time: new Date(collectionTime),
+          icon: 'package_collected'
+        });
+      });
+
+      // Sort by time descending and take top 5
+      recentActivities.sort((a, b) => b.time - a.time);
+      const sortedActivities = recentActivities.slice(0, 5);
 
       // System health checks
       const systemIssues = [];
@@ -152,6 +221,9 @@ const AdminDashboard = () => {
       }
       if (incidentStats?.criticalIncidents > 0) {
         systemIssues.push(`${incidentStats.criticalIncidents} critical incident(s)`);
+      }
+      if (arrivedPackages.length > 5) {
+        systemIssues.push(`${arrivedPackages.length} packages awaiting collection`);
       }
 
       setDashboardData({
@@ -171,9 +243,12 @@ const AdminDashboard = () => {
           revenue: todayRevenue
         },
         packages: {
+          total: allPackages.length,
           inTransit: inTransitPackages.length,
           arrived: arrivedPackages.length,
-          collected: collectedPackages.length
+          collected: collectedPackages.length,
+          cancelled: allPackages.filter(p => p.packageStatus === 'CANCELLED').length,
+          totalRevenue: packageRevenue
         },
         incidents: {
           total: incidentStats.totalIncidents || 0,
@@ -186,7 +261,7 @@ const AdminDashboard = () => {
           negative: feedbackStats.negativeFeedbacks || 0,
           averageRating: feedbackStats.averageRating || 0
         },
-        recentActivities,
+        recentActivities: sortedActivities,
         upcomingTrips,
         systemHealth: {
           status: systemIssues.length === 0 ? 'good' : systemIssues.length < 3 ? 'warning' : 'critical',
@@ -224,15 +299,27 @@ const AdminDashboard = () => {
   );
 
   const ActivityItem = ({ activity }) => {
+    // ✅ Enhanced icons for all package states
     const icons = {
       ticket: <CheckCircle className="w-5 h-5 text-green-600" />,
-      package: <Package className="w-5 h-5 text-blue-600" />,
+      package_booked: <Package className="w-5 h-5 text-blue-600" />,
+      package_arrived: <Truck className="w-5 h-5 text-orange-600" />,
+      package_collected: <PackageCheck className="w-5 h-5 text-green-600" />,
       incident: <AlertTriangle className="w-5 h-5 text-red-600" />
+    };
+
+    // ✅ Color coding for different activity types
+    const bgColors = {
+      ticket: 'bg-green-100',
+      package_booked: 'bg-blue-100',
+      package_arrived: 'bg-orange-100',
+      package_collected: 'bg-green-100',
+      incident: 'bg-red-100'
     };
 
     return (
       <div className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+        <div className={`w-10 h-10 rounded-full ${bgColors[activity.icon] || 'bg-gray-100'} flex items-center justify-center flex-shrink-0`}>
           {icons[activity.icon] || <Activity className="w-5 h-5 text-gray-600" />}
         </div>
         <div className="flex-1 min-w-0">
@@ -335,16 +422,57 @@ const AdminDashboard = () => {
         />
         <StatCard
           icon={Package}
-          title="Packages"
+          title="Active Packages"
           value={dashboardData.packages.inTransit}
-          subtitle={`${dashboardData.packages.arrived} arrived, ${dashboardData.packages.collected} collected`}
+          subtitle={`${dashboardData.packages.total} total packages`}
           trend="3%"
           trendUp={false}
           color="purple"
         />
       </div>
 
-      {/* Secondary Statistics */}
+      {/* Secondary Statistics - Enhanced Package Info */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-gray-600">In Transit</p>
+            <Package className="w-5 h-5 text-blue-600" />
+          </div>
+          <p className="text-2xl font-bold text-blue-600">{dashboardData.packages.inTransit}</p>
+          <p className="text-xs text-gray-500 mt-1">Packages on the way</p>
+        </div>
+
+        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-gray-600">Arrived</p>
+            <MapPin className="w-5 h-5 text-yellow-600" />
+          </div>
+          <p className="text-2xl font-bold text-yellow-600">{dashboardData.packages.arrived}</p>
+          <p className="text-xs text-gray-500 mt-1">Awaiting collection</p>
+        </div>
+
+        <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-gray-600">Collected</p>
+            <CheckCircle className="w-5 h-5 text-green-600" />
+          </div>
+          <p className="text-2xl font-bold text-green-600">{dashboardData.packages.collected}</p>
+          <p className="text-xs text-gray-500 mt-1">Successfully delivered</p>
+        </div>
+
+        <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-gray-600">Package Revenue</p>
+            <DollarSign className="w-5 h-5 text-purple-600" />
+          </div>
+          <p className="text-2xl font-bold text-purple-600">
+            {dashboardData.packages.totalRevenue.toLocaleString()}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">RWF total</p>
+        </div>
+      </div>
+
+      {/* Additional Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <StatCard
           icon={AlertTriangle}
@@ -424,6 +552,7 @@ const AdminDashboard = () => {
 
       {/* Quick Stats Bar */}
       <div className="bg-gradient-to-r from-blue-600 to-gray-800 rounded-2xl shadow-xl p-6 text-white">
+        <h3 className="text-xl font-bold mb-4">Performance Overview</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div className="text-center">
             <p className="text-blue-100 text-sm mb-1">Total Bookings</p>
@@ -431,18 +560,22 @@ const AdminDashboard = () => {
             <p className="text-blue-200 text-xs mt-1">This week</p>
           </div>
           <div className="text-center">
-            <p className="text-blue-100 text-sm mb-1">Active Routes</p>
-            <p className="text-3xl font-bold">{dashboardData.upcomingTrips.length}</p>
-            <p className="text-blue-200 text-xs mt-1">Next 3 days</p>
+            <p className="text-blue-100 text-sm mb-1">Total Packages</p>
+            <p className="text-3xl font-bold">{dashboardData.packages.total}</p>
+            <p className="text-blue-200 text-xs mt-1">All statuses</p>
           </div>
           <div className="text-center">
             <p className="text-blue-100 text-sm mb-1">Positive Feedback</p>
-            <p className="text-3xl font-bold">{Math.round((dashboardData.feedback.positive / dashboardData.feedback.total) * 100) || 0}%</p>
+            <p className="text-3xl font-bold">
+              {Math.round((dashboardData.feedback.positive / dashboardData.feedback.total) * 100) || 0}%
+            </p>
             <p className="text-blue-200 text-xs mt-1">Customer satisfaction</p>
           </div>
           <div className="text-center">
             <p className="text-blue-100 text-sm mb-1">Fleet Utilization</p>
-            <p className="text-3xl font-bold">{Math.round((dashboardData.vehicles.available / dashboardData.vehicles.total) * 100) || 0}%</p>
+            <p className="text-3xl font-bold">
+              {Math.round((dashboardData.vehicles.available / dashboardData.vehicles.total) * 100) || 0}%
+            </p>
             <p className="text-blue-200 text-xs mt-1">Available now</p>
           </div>
         </div>

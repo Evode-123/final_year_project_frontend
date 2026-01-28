@@ -51,23 +51,43 @@ const OtherUserDashboard = () => {
         transportApiService.getMyBookingHistory().catch(() => []),
         packageApiService.getMySentPackages().catch(() => []),
         packageApiService.getMyReceivedPackages().catch(() => []),
-        packageApiService.getMyStatistics().catch(() => ({})),
         feedbackApiService.getMyFeedbacks().catch(() => []),
         feedbackApiService.getMyUnreadResponsesCount().catch(() => ({ count: 0 }))
       ]);
 
-      // Get upcoming trips from active bookings
-      const now = new Date();
-      const upcomingTrips = (activeBookings || []).filter(booking => {
-        if (!booking || !booking.tripDate) return false;
-        const tripDate = new Date(booking.tripDate);
-        return tripDate > now;
-      }).sort((a, b) => new Date(a.tripDate) - new Date(b.tripDate));
+      // Log package data to debug
+      console.log('=== PACKAGE DATA DEBUG ===');
+      console.log('Sent Packages:', sentPackages);
+      console.log('First Sent Package:', sentPackages[0]);
+      console.log('Received Packages:', receivedPackages);
+      console.log('First Received Package:', receivedPackages[0]);
+      console.log('========================');
 
-      // Calculate package statistics
+      // Get upcoming trips from booking history (not from activeBookings)
+      const now = new Date();
+      const upcomingTrips = (bookingHistory || []).filter(booking => {
+        if (!booking || !booking.dailyTrip || !booking.dailyTrip.tripDate) return false;
+        
+        try {
+          const tripDate = new Date(booking.dailyTrip.tripDate);
+          const departureTime = booking.dailyTrip.timeSlot?.departureTime;
+          
+          if (departureTime) {
+            const [hours, minutes] = departureTime.split(':').map(Number);
+            tripDate.setHours(hours, minutes, 0, 0);
+          }
+          
+          return tripDate > now && booking.bookingStatus === 'CONFIRMED';
+        } catch (error) {
+          console.error('Error processing trip date:', error);
+          return false;
+        }
+      }).sort((a, b) => new Date(a.dailyTrip.tripDate) - new Date(b.dailyTrip.tripDate));
+
+      // Calculate package statistics - Fixed to use correct status field
       const allPackages = [...(sentPackages || []), ...(receivedPackages || [])];
-      const inTransitPackages = allPackages.filter(p => p && p.status === 'IN_TRANSIT').length;
-      const deliveredPackages = allPackages.filter(p => p && p.status === 'COLLECTED').length;
+      const inTransitPackages = allPackages.filter(p => p && p.packageStatus === 'IN_TRANSIT').length;
+      const deliveredPackages = allPackages.filter(p => p && p.packageStatus === 'COLLECTED').length;
 
       setDashboardData({
         activeBookings: activeBookings || [],
@@ -119,11 +139,11 @@ const OtherUserDashboard = () => {
   );
 
   const BookingCard = ({ booking }) => {
-    if (!booking) return null;
+    if (!booking || !booking.dailyTrip) return null;
     
-    const tripDate = new Date(booking.tripDate);
+    const tripDate = new Date(booking.dailyTrip.tripDate);
     const isUpcoming = tripDate > new Date();
-    const departureTime = booking.departureTime ? new Date(booking.departureTime) : tripDate;
+    const departureTime = booking.dailyTrip.timeSlot?.departureTime || '';
 
     return (
       <div className={`p-5 rounded-xl border-2 transition-all ${
@@ -139,8 +159,12 @@ const OtherUserDashboard = () => {
             <div className="mt-2 flex items-center gap-2 text-xs text-gray-600">
               <Calendar className="w-3 h-3" />
               {tripDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-              <Clock className="w-3 h-3 ml-2" />
-              {departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {departureTime && (
+                <>
+                  <Clock className="w-3 h-3 ml-2" />
+                  {departureTime}
+                </>
+              )}
             </div>
           </div>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -155,20 +179,24 @@ const OtherUserDashboard = () => {
         <div className="space-y-2 mb-3">
           <div className="flex items-center gap-2">
             <Navigation className="w-4 h-4 text-green-600" />
-            <span className="text-sm font-semibold text-gray-900">{booking.origin || 'N/A'}</span>
+            <span className="text-sm font-semibold text-gray-900">
+              {booking.dailyTrip.route?.origin || 'N/A'}
+            </span>
           </div>
           <div className="flex items-center gap-2 pl-6">
             <MapPin className="w-4 h-4 text-red-600" />
-            <span className="text-sm font-semibold text-gray-900">{booking.destination || 'N/A'}</span>
+            <span className="text-sm font-semibold text-gray-900">
+              {booking.dailyTrip.route?.destination || 'N/A'}
+            </span>
           </div>
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t border-gray-200">
           <div className="text-sm text-gray-600">
-            <span className="font-semibold">{booking.numberOfSeats || 1}</span> seat(s)
+            <span className="font-semibold">Seat {booking.seatNumber || 'N/A'}</span>
           </div>
           <div className="text-lg font-bold text-blue-600">
-            {(booking.totalAmount || 0).toLocaleString()} RWF
+            {parseFloat(booking.price || 0).toLocaleString()} RWF
           </div>
         </div>
       </div>
@@ -192,22 +220,23 @@ const OtherUserDashboard = () => {
       <div className="p-4 bg-white rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all">
         <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-xs text-gray-500 mb-1">{type === 'sent' ? 'Tracking' : 'Tracking'}</p>
+            <p className="text-xs text-gray-500 mb-1">Tracking Number</p>
             <p className="text-sm font-bold text-gray-900">{pkg.trackingNumber || 'N/A'}</p>
           </div>
-          <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(pkg.status)}`}>
-            {(pkg.status || 'PENDING').replace('_', ' ')}
+          <span className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(pkg.packageStatus)}`}>
+            {(pkg.packageStatus || 'PENDING').replace('_', ' ')}
           </span>
         </div>
 
         <div className="space-y-1 text-sm text-gray-600 mb-3">
-          <p><span className="font-medium">From:</span> {pkg.senderName || 'N/A'}</p>
-          <p><span className="font-medium">To:</span> {pkg.receiverName || 'N/A'}</p>
+          {/* ✅ FIXED: Use direct properties from PackageResponseDTO */}
+          <p><span className="font-medium">From:</span> {pkg.senderNames || 'N/A'}</p>
+          <p><span className="font-medium">To:</span> {pkg.receiverNames || 'N/A'}</p>
           <p><span className="font-medium">Route:</span> {pkg.origin || 'N/A'} → {pkg.destination || 'N/A'}</p>
         </div>
 
         <div className="text-xs text-gray-500">
-          Booked: {pkg.createdAt ? new Date(pkg.createdAt).toLocaleDateString() : 'N/A'}
+          Booked: {pkg.bookingDate ? new Date(pkg.bookingDate).toLocaleDateString() : 'N/A'}
         </div>
       </div>
     );
@@ -247,7 +276,7 @@ const OtherUserDashboard = () => {
         <StatCard
           icon={Ticket}
           title="Active Bookings"
-          value={dashboardData.activeBookings.length}
+          value={dashboardData.upcomingTrips.length}
           subtitle={`${dashboardData.upcomingTrips.length} upcoming trips`}
           color="blue"
         />
@@ -284,8 +313,8 @@ const OtherUserDashboard = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {dashboardData.upcomingTrips.map((booking, i) => (
-              booking && <BookingCard key={i} booking={booking} />
-            )).filter(Boolean)}
+              <BookingCard key={booking.id || i} booking={booking} />
+            ))}
           </div>
         </div>
       )}
@@ -312,8 +341,8 @@ const OtherUserDashboard = () => {
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">Sent Packages</h3>
                   <div className="space-y-3">
                     {dashboardData.myPackages.sent.slice(0, 3).map((pkg, i) => (
-                      pkg && <PackageCard key={i} pkg={pkg} type="sent" />
-                    )).filter(Boolean)}
+                      <PackageCard key={pkg.id || i} pkg={pkg} type="sent" />
+                    ))}
                   </div>
                 </div>
               )}
@@ -323,8 +352,8 @@ const OtherUserDashboard = () => {
                   <h3 className="text-sm font-semibold text-gray-700 mb-2 mt-4">Received Packages</h3>
                   <div className="space-y-3">
                     {dashboardData.myPackages.received.slice(0, 3).map((pkg, i) => (
-                      pkg && <PackageCard key={i} pkg={pkg} type="received" />
-                    )).filter(Boolean)}
+                      <PackageCard key={pkg.id || i} pkg={pkg} type="received" />
+                    ))}
                   </div>
                 </div>
               )}
@@ -341,7 +370,7 @@ const OtherUserDashboard = () => {
           <div className="space-y-4 max-h-96 overflow-y-auto">
             {dashboardData.bookingHistory.recent.length > 0 ? (
               dashboardData.bookingHistory.recent.map((booking, i) => (
-                <div key={i} className="p-4 bg-gray-50 rounded-lg">
+                <div key={booking.id || i} className="p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-gray-600">#{booking.ticketNumber || 'N/A'}</span>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -353,11 +382,17 @@ const OtherUserDashboard = () => {
                     </span>
                   </div>
                   <p className="text-sm font-semibold text-gray-900 mb-1">
-                    {booking.origin || 'N/A'} → {booking.destination || 'N/A'}
+                    {booking.dailyTrip?.route?.origin || 'N/A'} → {booking.dailyTrip?.route?.destination || 'N/A'}
                   </p>
                   <div className="flex items-center justify-between text-xs text-gray-600">
-                    <span>{booking.tripDate ? new Date(booking.tripDate).toLocaleDateString() : 'N/A'}</span>
-                    <span className="font-bold text-blue-600">{(booking.totalAmount || 0).toLocaleString()} RWF</span>
+                    <span>
+                      {booking.dailyTrip?.tripDate 
+                        ? new Date(booking.dailyTrip.tripDate).toLocaleDateString() 
+                        : 'N/A'}
+                    </span>
+                    <span className="font-bold text-blue-600">
+                      {parseFloat(booking.price || 0).toLocaleString()} RWF
+                    </span>
                   </div>
                 </div>
               ))
@@ -378,7 +413,7 @@ const OtherUserDashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div className="text-center">
             <p className="text-blue-100 text-sm mb-1">Active Bookings</p>
-            <p className="text-3xl font-bold">{dashboardData.activeBookings.length}</p>
+            <p className="text-3xl font-bold">{dashboardData.upcomingTrips.length}</p>
             <p className="text-blue-200 text-xs mt-1">Current</p>
           </div>
           <div className="text-center">

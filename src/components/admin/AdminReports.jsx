@@ -376,232 +376,763 @@ const AdminReports = () => {
     }
   };
 
+  // ✅ ENHANCED PDF GENERATION - Professional styling like MINEDUC report
   const generatePDF = async () => {
     try {
       const { jsPDF } = window.jspdf;
+      require('jspdf-autotable');
+      
       const doc = new jsPDF();
       
       let yPos = 20;
+      const pageWidth = doc.internal.pageSize.width;
       const pageHeight = doc.internal.pageSize.height;
       const margin = 20;
       
-      // Helper function to check if we need a new page
-      const checkNewPage = (requiredSpace) => {
-        if (yPos + requiredSpace > pageHeight - margin) {
-          doc.addPage();
-          yPos = margin;
-          return true;
-        }
-        return false;
-      };
-
-      // Header
-      doc.setFillColor(37, 99, 235);
-      doc.rect(0, 0, 210, 30, 'F');
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
-      doc.setFont(undefined, 'bold');
-      doc.text('TDMS Admin Report', 105, 15, { align: 'center' });
-      
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 23, { align: 'center' });
-
-      yPos = 40;
-      doc.setTextColor(0, 0, 0);
-
-      // Report content based on selected report
-      if (selectedReport === 'overview' && overviewData) {
-        doc.setFontSize(16);
+      // ✅ PROFESSIONAL HEADER - Like MINEDUC
+      const addHeader = () => {
+        // Company Name - Left side
+        doc.setFontSize(24);
+        doc.setTextColor(37, 99, 235); // Blue color
         doc.setFont(undefined, 'bold');
-        doc.text('Business Overview Report', margin, yPos);
-        yPos += 10;
-
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Report Period: ${dateRange.startDate} to ${dateRange.endDate}`, margin, yPos);
-        yPos += 15;
-
-        // Financial Summary
-        checkNewPage(40);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Financial Summary', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Revenue: RWF ${overviewData.totalRevenue.toLocaleString()}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Total Bookings: ${overviewData.totalBookings}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Confirmed: ${overviewData.confirmedBookings}`, margin + 10, yPos);
-        yPos += 6;
-        doc.text(`Cancelled: ${overviewData.cancelledBookings} (${overviewData.cancellationRate}%)`, margin + 10, yPos);
-        yPos += 10;
-
-        // Operations Summary
-        checkNewPage(40);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Operations Summary', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Vehicles: ${overviewData.totalVehicles} (Active: ${overviewData.activeVehicles})`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Total Drivers: ${overviewData.totalDrivers} (Active: ${overviewData.activeDrivers})`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Total Routes: ${overviewData.totalRoutes}`, margin + 5, yPos);
-        yPos += 10;
-
-        // Package Delivery
-        checkNewPage(30);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Package Delivery', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Packages: ${overviewData.totalPackages}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Delivered: ${overviewData.deliveredPackages}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`In Transit: ${overviewData.inTransitPackages}`, margin + 5, yPos);
-        yPos += 10;
-
-        // Customer Service
-        checkNewPage(30);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Customer Service', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Feedback: ${overviewData.totalFeedback}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Average Rating: ${overviewData.avgRating}/5.0`, margin + 5, yPos);
-        yPos += 10;
-
-        // Safety & Incidents
-        checkNewPage(30);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Safety & Incidents', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Incidents: ${overviewData.totalIncidents}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Critical: ${overviewData.criticalIncidents}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Resolved: ${overviewData.resolvedIncidents}`, margin + 5, yPos);
-      }
-
-      // Similar detailed sections for other report types...
-      // (Financial, Operational, Safety, Customer reports)
-
-      if (selectedReport === 'financial' && financialData) {
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.text('Financial Report', margin, yPos);
-        yPos += 10;
-
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Period: ${dateRange.startDate} to ${dateRange.endDate}`, margin, yPos);
-        yPos += 15;
-
-        // Revenue Summary
-        checkNewPage(40);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Revenue Summary', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Revenue: RWF ${financialData.totalRevenue.toLocaleString()}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Booking Revenue: RWF ${financialData.bookingRevenue.toLocaleString()}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Package Revenue: RWF ${financialData.packageRevenue.toLocaleString()}`, margin + 5, yPos);
-        yPos += 6;
-        doc.text(`Total Transactions: ${financialData.totalTransactions}`, margin + 5, yPos);
-        yPos += 10;
-
-        // Payment Methods
-        checkNewPage(30);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Payment Methods Breakdown', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        Object.entries(financialData.paymentMethods).forEach(([method, amount]) => {
-          checkNewPage(6);
-          doc.text(`${method}: RWF ${amount.toLocaleString()}`, margin + 5, yPos);
-          yPos += 6;
-        });
-        yPos += 5;
-
-        // Top Routes by Revenue
-        checkNewPage(30);
-        doc.setFillColor(243, 244, 246);
-        doc.rect(margin, yPos, 170, 8, 'F');
-        doc.setFont(undefined, 'bold');
-        doc.text('Top Routes by Revenue', margin + 2, yPos + 5);
-        yPos += 12;
-
-        doc.setFont(undefined, 'normal');
-        const sortedRoutes = Object.entries(financialData.revenueByRoute)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 10);
+        doc.text('Brothers Express', margin, 25);
         
-        sortedRoutes.forEach(([route, revenue]) => {
-          checkNewPage(6);
-          doc.text(`${route}: RWF ${revenue.toLocaleString()}`, margin + 5, yPos);
-          yPos += 6;
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont(undefined, 'normal');
+        doc.text('Kigali, Rwanda', margin, 32);
+        doc.text('+250 788 000 000 | info@tdms.gov.rw', margin, 38);
+        
+        // Report Title - Right side
+        const reportTitle = selectedReport.charAt(0).toUpperCase() + selectedReport.slice(1) + ' Report';
+        doc.setFontSize(20);
+        doc.setTextColor(37, 99, 235);
+        doc.setFont(undefined, 'bold');
+        doc.text(reportTitle, pageWidth - margin, 25, { align: 'right' });
+        
+        doc.setFontSize(10);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont(undefined, 'bold');
+        doc.text(`Period: From ${dateRange.startDate}`, pageWidth - margin, 32, { align: 'right' });
+        doc.setFont(undefined, 'normal');
+        doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth - margin, 38, { align: 'right' });
+        
+        // Blue separator line
+        doc.setDrawColor(37, 99, 235);
+        doc.setLineWidth(0.5);
+        doc.line(margin, 42, pageWidth - margin, 42);
+        
+        return 50;
+      };
+      
+      yPos = addHeader();
+      doc.setTextColor(0, 0, 0);
+      
+      // ✅ GENERATE TABLES BASED ON REPORT TYPE
+      if (selectedReport === 'overview' && overviewData) {
+        // Section Title
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Business Overview', margin, yPos);
+        yPos += 8;
+        
+        // Financial Summary Table
+        doc.autoTable({
+          startY: yPos,
+          head: [['METRIC', 'VALUE']],
+          body: [
+            ['Total Revenue', `RWF ${overviewData.totalRevenue.toLocaleString()}`],
+            ['Total Bookings', overviewData.totalBookings.toString()],
+            ['Confirmed Bookings', overviewData.confirmedBookings.toString()],
+            ['Cancelled Bookings', `${overviewData.cancelledBookings} (${overviewData.cancellationRate}%)`]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Operations Summary Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Operations Summary', margin, yPos);
+        yPos += 5;
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['RESOURCE', 'TOTAL', 'ACTIVE', 'STATUS']],
+          body: [
+            ['Vehicles', overviewData.totalVehicles.toString(), overviewData.activeVehicles.toString(), 
+             `${((overviewData.activeVehicles/overviewData.totalVehicles) * 100).toFixed(0)}%`],
+            ['Drivers', overviewData.totalDrivers.toString(), overviewData.activeDrivers.toString(),
+             `${((overviewData.activeDrivers/overviewData.totalDrivers) * 100).toFixed(0)}%`],
+            ['Routes', overviewData.totalRoutes.toString(), '-', '-']
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Package Delivery Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Package Delivery', margin, yPos);
+        yPos += 5;
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['STATUS', 'COUNT', 'PERCENTAGE']],
+          body: [
+            ['Total Packages', overviewData.totalPackages.toString(), '100%'],
+            ['Delivered', overviewData.deliveredPackages.toString(), 
+             `${((overviewData.deliveredPackages/overviewData.totalPackages) * 100).toFixed(1)}%`],
+            ['In Transit', overviewData.inTransitPackages.toString(),
+             `${((overviewData.inTransitPackages/overviewData.totalPackages) * 100).toFixed(1)}%`]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Customer Service & Safety Table
+        doc.autoTable({
+          startY: yPos,
+          head: [['CATEGORY', 'METRIC', 'VALUE']],
+          body: [
+            ['Customer Service', 'Total Feedback', overviewData.totalFeedback.toString()],
+            ['Customer Service', 'Average Rating', `${overviewData.avgRating}/5.0`],
+            ['Safety & Incidents', 'Total Incidents', overviewData.totalIncidents.toString()],
+            ['Safety & Incidents', 'Critical Incidents', overviewData.criticalIncidents.toString()],
+            ['Safety & Incidents', 'Resolved Incidents', overviewData.resolvedIncidents.toString()]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
         });
       }
-
-      // Footer
+      
+      if (selectedReport === 'financial' && financialData) {
+        // Revenue Summary Table
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Financial Report', margin, yPos);
+        yPos += 8;
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['REVENUE TYPE', 'AMOUNT (RWF)']],
+          body: [
+            ['Total Revenue', financialData.totalRevenue.toLocaleString()],
+            ['Booking Revenue', financialData.bookingRevenue.toLocaleString()],
+            ['Package Revenue', financialData.packageRevenue.toLocaleString()],
+            ['Total Transactions', financialData.totalTransactions.toString()]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Payment Methods Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Payment Methods Breakdown', margin, yPos);
+        yPos += 5;
+        
+        const paymentBody = Object.entries(financialData.paymentMethods).map(([method, amount]) => [
+          method,
+          amount.toLocaleString()
+        ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['PAYMENT METHOD', 'AMOUNT (RWF)']],
+          body: paymentBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Top Routes by Revenue Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Top Routes by Revenue', margin, yPos);
+        yPos += 5;
+        
+        const routeBody = Object.entries(financialData.revenueByRoute)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([route, revenue], index) => [
+            (index + 1).toString(),
+            route,
+            revenue.toLocaleString()
+          ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['#', 'ROUTE', 'REVENUE (RWF)']],
+          body: routeBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+      }
+      
+      if (selectedReport === 'operational' && operationalData) {
+        // Trip Performance Table
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Operations Report', margin, yPos);
+        yPos += 8;
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['METRIC', 'VALUE']],
+          body: [
+            ['Total Trips', operationalData.totalTrips.toString()],
+            ['Completed Trips', operationalData.completedTrips.toString()],
+            ['Completion Rate', `${operationalData.completionRate}%`],
+            ['Total Vehicles', operationalData.totalVehicles.toString()],
+            ['Active Vehicles', operationalData.activeVehicles.toString()],
+            ['Total Drivers', operationalData.totalDrivers.toString()],
+            ['Active Drivers', operationalData.activeDrivers.toString()]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Vehicle Utilization Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Vehicle Utilization', margin, yPos);
+        yPos += 5;
+        
+        const vehicleBody = Object.entries(operationalData.vehicleUtilization)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([vehicle, trips], index) => [
+            (index + 1).toString(),
+            vehicle,
+            trips.toString()
+          ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['#', 'VEHICLE PLATE', 'TRIPS']],
+          body: vehicleBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Most Popular Routes Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Most Popular Routes', margin, yPos);
+        yPos += 5;
+        
+        const popularRoutesBody = Object.entries(operationalData.routePopularity)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([route, bookings], index) => [
+            (index + 1).toString(),
+            route,
+            bookings.toString()
+          ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['#', 'ROUTE', 'BOOKINGS']],
+          body: popularRoutesBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+      }
+      
+      if (selectedReport === 'safety' && safetyData) {
+        // Safety Report Title
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Safety Report', margin, yPos);
+        yPos += 8;
+        
+        // Inspection Status Table
+        doc.autoTable({
+          startY: yPos,
+          head: [['INSPECTION STATUS', 'COUNT']],
+          body: [
+            ['Total Vehicles', safetyData.totalVehicles?.toString() || '0'],
+            ['Inspected Vehicles', safetyData.inspectedVehicles?.toString() || '0'],
+            ['Due Soon', safetyData.dueSoonCount?.toString() || '0'],
+            ['Overdue', safetyData.overdueCount?.toString() || '0']
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Incidents by Severity Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Incidents by Severity', margin, yPos);
+        yPos += 5;
+        
+        const severityBody = Object.entries(safetyData.incidentsBySeverity).map(([severity, count]) => [
+          severity,
+          count.toString()
+        ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['SEVERITY', 'COUNT']],
+          body: severityBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Incidents by Type Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Incidents by Type', margin, yPos);
+        yPos += 5;
+        
+        const typeBody = Object.entries(safetyData.incidentsByType)
+          .sort(([, a], [, b]) => b - a)
+          .map(([type, count], index) => [
+            (index + 1).toString(),
+            type,
+            count.toString()
+          ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['#', 'INCIDENT TYPE', 'COUNT']],
+          body: typeBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+      }
+      
+      if (selectedReport === 'customer' && customerData) {
+        // Customer Service Report Title
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Customer Service Report', margin, yPos);
+        yPos += 8;
+        
+        // Booking Statistics Table
+        doc.autoTable({
+          startY: yPos,
+          head: [['BOOKING METRIC', 'VALUE']],
+          body: [
+            ['Total Bookings', customerData.totalBookings.toString()],
+            ['Confirmed Bookings', customerData.confirmedBookings.toString()],
+            ['Cancelled Bookings', customerData.cancelledBookings.toString()],
+            ['Cancellation Rate', `${customerData.cancellationRate}%`]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Feedback Summary Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Customer Feedback Summary', margin, yPos);
+        yPos += 5;
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['FEEDBACK METRIC', 'VALUE']],
+          body: [
+            ['Total Feedback', customerData.totalFeedback.toString()],
+            ['Average Rating', `${customerData.avgRating}/5.0`]
+          ],
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Sentiment Analysis Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Sentiment Analysis', margin, yPos);
+        yPos += 5;
+        
+        const sentimentBody = Object.entries(customerData.feedbackBySentiment).map(([sentiment, count]) => [
+          sentiment,
+          count.toString()
+        ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['SENTIMENT', 'COUNT']],
+          body: sentimentBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+        
+        // Feedback by Category Table
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(37, 99, 235);
+        doc.text('Feedback by Category', margin, yPos);
+        yPos += 5;
+        
+        const categoryBody = Object.entries(customerData.feedbackByCategory)
+          .sort(([, a], [, b]) => b - a)
+          .map(([category, count], index) => [
+            (index + 1).toString(),
+            category,
+            count.toString()
+          ]);
+        
+        doc.autoTable({
+          startY: yPos,
+          head: [['#', 'CATEGORY', 'COUNT']],
+          body: categoryBody,
+          theme: 'grid',
+          headStyles: {
+            fillColor: [37, 99, 235],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 10
+          },
+          bodyStyles: {
+            fontSize: 9
+          },
+          alternateRowStyles: {
+            fillColor: [240, 245, 255]
+          },
+          margin: { left: margin, right: margin }
+        });
+      }
+      
+      // ✅ PROFESSIONAL SIGNATURE SECTION (Like MINEDUC)
+      const addSignatureSection = () => {
+        const currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 20 : yPos + 20;
+        
+        // Check if we need a new page
+        if (currentY + 50 > pageHeight - 30) {
+          doc.addPage();
+          yPos = 30;
+        } else {
+          yPos = currentY;
+        }
+        
+        // Create signature boxes
+        const boxWidth = (pageWidth - (3 * margin)) / 2;
+        const boxHeight = 40;
+        
+        // Prepared By box
+        doc.setDrawColor(150, 150, 150);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(margin, yPos, boxWidth, boxHeight, 3, 3);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(37, 99, 235);
+        doc.setFont(undefined, 'bold');
+        doc.text('Prepared By', margin + boxWidth/2, yPos + 10, { align: 'center' });
+        
+        // Signature line
+        doc.setDrawColor(37, 99, 235);
+        doc.line(margin + 10, yPos + 25, margin + boxWidth - 10, yPos + 25);
+        
+        doc.setFontSize(9);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont(undefined, 'normal');
+        doc.text('System Administrator', margin + boxWidth/2, yPos + 30, { align: 'center' });
+        doc.text('Date: __________', margin + boxWidth/2, yPos + 36, { align: 'center' });
+        
+        // Approved By box
+        doc.setDrawColor(150, 150, 150);
+        doc.roundedRect(margin + boxWidth + margin, yPos, boxWidth, boxHeight, 3, 3);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(37, 99, 235);
+        doc.setFont(undefined, 'bold');
+        doc.text('Approved By', margin + boxWidth + margin + boxWidth/2, yPos + 10, { align: 'center' });
+        
+        // Signature line
+        doc.setDrawColor(37, 99, 235);
+        doc.line(margin + boxWidth + margin + 10, yPos + 25, pageWidth - margin - 10, yPos + 25);
+        
+        doc.setFontSize(9);
+        doc.setTextColor(60, 60, 60);
+        doc.setFont(undefined, 'normal');
+        doc.text('Director of Operations', margin + boxWidth + margin + boxWidth/2, yPos + 30, { align: 'center' });
+        doc.text('Date: __________', margin + boxWidth + margin + boxWidth/2, yPos + 36, { align: 'center' });
+      };
+      
+      addSignatureSection();
+      
+      // ✅ PROFESSIONAL FOOTER (Like MINEDUC)
       const addFooter = () => {
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
           doc.setPage(i);
+          
+          // Bottom border line
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.3);
+          doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
+          
+          // Footer text
           doc.setFontSize(8);
           doc.setTextColor(128, 128, 128);
+          doc.setFont(undefined, 'normal');
           doc.text(
-            `Page ${i} of ${pageCount}`,
-            105,
-            pageHeight - 10,
+            'Generated by Transport & Delivery Management System',
+            pageWidth / 2,
+            pageHeight - 18,
             { align: 'center' }
           );
           doc.text(
-            'TDMS - Transport & Delivery Management System',
-            105,
-            pageHeight - 5,
+            `© ${new Date().getFullYear()} Brothers Express`,
+            pageWidth / 2,
+            pageHeight - 13,
+            { align: 'center' }
+          );
+          
+          // Page number
+          doc.setFont(undefined, 'bold');
+          doc.text(
+            `Page ${i} of ${pageCount}`,
+            pageWidth / 2,
+            pageHeight - 8,
             { align: 'center' }
           );
         }
       };
-
+      
       addFooter();
-
+      
       // Save the PDF
       const fileName = `TDMS_${selectedReport}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(fileName);
-
+      
       return true;
     } catch (error) {
       console.error('PDF generation error:', error);
+      setError('Failed to generate PDF: ' + error.message);
       throw error;
     }
   };
@@ -1052,15 +1583,14 @@ const AdminReports = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Admin Reports</h1>
-          <p className="text-gray-600 mt-1">Generate comprehensive business reports</p>
         </div>
         <button
           onClick={generatePDF}
           disabled={loading}
-          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
         >
           <Download className="w-5 h-5" />
-          {loading ? 'Generating...' : 'Download PDF'}
+          {loading ? 'Generating...' : 'Download Report'}
         </button>
       </div>
 
@@ -1088,7 +1618,7 @@ const AdminReports = () => {
               onClick={() => setSelectedReport(type.id)}
               className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-colors ${
                 selectedReport === type.id
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-blue-600 text-white shadow-md'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
             >

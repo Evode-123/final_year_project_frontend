@@ -14,7 +14,9 @@ import {
   ArrowUp,
   ArrowDown,
   Users,
-  Loader
+  Loader,
+  Truck,
+  PackageCheck
 } from 'lucide-react';
 import transportApiService from '../../services/transportApiService';
 import packageApiService from '../../services/packageApiService';
@@ -96,23 +98,90 @@ const ManagerDashboard = () => {
         })
         .slice(0, 5);
 
-      // Build recent activities
-      const recentActivities = [
-        ...todayBookings.slice(0, 2).map(b => ({
+      // ✅ FIXED: Build recent activities with proper field extraction
+      const recentActivities = [];
+
+      // Add booking activities with robust field extraction
+      todayBookings.slice(0, 2).forEach(b => {
+        // Extract customer name
+        const customerName = b.customer?.names || 
+                            b.customer?.name ||
+                            b.customerName ||
+                            b.passengerName ||
+                            'Guest';
+        
+        // ✅ Extract origin and destination from multiple possible locations
+        const origin = b.origin || 
+                      b.route?.origin || 
+                      b.dailyTrip?.route?.origin ||
+                      b.trip?.origin ||
+                      'Origin';
+        
+        const destination = b.destination || 
+                           b.route?.destination || 
+                           b.dailyTrip?.route?.destination ||
+                           b.trip?.destination ||
+                           'Destination';
+        
+        recentActivities.push({
           type: 'booking',
           title: 'New Booking',
-          description: `${b.customer?.names} booked ticket #${b.ticketNumber}`,
-          time: new Date(b.bookingDate),
+          description: `${customerName} booked ticket #${b.ticketNumber} (${origin} → ${destination})`,
+          time: new Date(b.bookingDate || new Date()),
           icon: 'ticket'
-        })),
-        ...arrivedPackages.slice(0, 2).map(p => ({
-          type: 'package',
+        });
+      });
+
+      // ✅ Add IN_TRANSIT package activities
+      inTransitPackages.slice(0, 2).forEach(p => {
+        recentActivities.push({
+          type: 'package_booked',
+          title: 'Package Booked',
+          description: `${p.trackingNumber}: ${p.senderNames || 'Sender'} → ${p.receiverNames || 'Receiver'}`,
+          time: new Date(p.bookingDate || new Date()),
+          icon: 'package_booked'
+        });
+      });
+
+      // ✅ Add ARRIVED package activities
+      arrivedPackages.slice(0, 2).forEach(p => {
+        const arrivalTime = p.actualArrivalTime || 
+                           p.expectedArrivalTime ||
+                           p.bookingDate || 
+                           new Date();
+        
+        const destination = p.destination || 
+                          p.dailyTrip?.route?.destination ||
+                          'destination';
+        
+        recentActivities.push({
+          type: 'package_arrived',
           title: 'Package Arrived',
-          description: `Package ${p.trackingNumber} arrived`,
-          time: new Date(p.arrivalTime || p.createdAt),
-          icon: 'package'
-        }))
-      ].sort((a, b) => b.time - a.time).slice(0, 5);
+          description: `${p.trackingNumber} arrived at ${destination}`,
+          time: new Date(arrivalTime),
+          icon: 'package_arrived'
+        });
+      });
+
+      // ✅ Add COLLECTED package activities
+      collectedPackages.slice(0, 2).forEach(p => {
+        const collectionTime = p.collectedAt || 
+                              p.actualArrivalTime ||
+                              p.bookingDate || 
+                              new Date();
+        
+        recentActivities.push({
+          type: 'package_collected',
+          title: 'Package Collected',
+          description: `${p.trackingNumber} collected by ${p.collectedByName || p.receiverNames || 'recipient'}`,
+          time: new Date(collectionTime),
+          icon: 'package_collected'
+        });
+      });
+
+      // Sort by time and limit
+      recentActivities.sort((a, b) => b.time - a.time);
+      const sortedActivities = recentActivities.slice(0, 5);
 
       // Operational health checks
       const operationalIssues = [];
@@ -161,7 +230,7 @@ const ManagerDashboard = () => {
           negative: feedbackStats.negativeFeedbacks || 0,
           averageRating: feedbackStats.averageRating || 0
         },
-        recentActivities,
+        recentActivities: sortedActivities,
         upcomingTrips,
         operationalHealth: {
           status: operationalIssues.length === 0 ? 'good' : operationalIssues.length < 3 ? 'warning' : 'critical',
@@ -199,15 +268,27 @@ const ManagerDashboard = () => {
   );
 
   const ActivityItem = ({ activity }) => {
+    // ✅ Enhanced icons for all package states
     const icons = {
       ticket: <CheckCircle className="w-5 h-5 text-green-600" />,
-      package: <Package className="w-5 h-5 text-blue-600" />,
+      package_booked: <Package className="w-5 h-5 text-blue-600" />,
+      package_arrived: <Truck className="w-5 h-5 text-orange-600" />,
+      package_collected: <PackageCheck className="w-5 h-5 text-green-600" />,
       incident: <AlertTriangle className="w-5 h-5 text-red-600" />
+    };
+
+    // ✅ Color coding for different activity types
+    const bgColors = {
+      ticket: 'bg-green-100',
+      package_booked: 'bg-blue-100',
+      package_arrived: 'bg-orange-100',
+      package_collected: 'bg-green-100',
+      incident: 'bg-red-100'
     };
 
     return (
       <div className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-        <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+        <div className={`w-10 h-10 rounded-full ${bgColors[activity.icon] || 'bg-gray-100'} flex items-center justify-center flex-shrink-0`}>
           {icons[activity.icon] || <Activity className="w-5 h-5 text-gray-600" />}
         </div>
         <div className="flex-1 min-w-0">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { History, Ticket, Calendar, MapPin, User, Phone, Search, Filter, Loader, AlertCircle, CheckCircle, XCircle, Download, Printer, XOctagon } from 'lucide-react';
+import { History, Ticket, Calendar, MapPin, User, Phone, Search, Filter, Loader, AlertCircle, CheckCircle, XCircle, Download, Printer, XOctagon, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { USER_ROLES } from '../../utils/constants';
 import transportApiService from '../../services/transportApiService';
@@ -27,6 +27,31 @@ const BookingHistoryPanel = () => {
   useEffect(() => {
     filterBookings();
   }, [searchTerm, statusFilter, allBookings]);
+
+  // ✅ Check if a trip has departed (ticket is expired/consumed)
+  const isTripDeparted = (booking) => {
+    if (!booking.dailyTrip || !booking.dailyTrip.tripDate || !booking.dailyTrip.timeSlot) {
+      return false;
+    }
+
+    try {
+      const tripDate = new Date(booking.dailyTrip.tripDate);
+      const departureTime = booking.dailyTrip.timeSlot.departureTime;
+      
+      // Parse departure time (format: "HH:MM" or "HH:MM:SS")
+      const [hours, minutes] = departureTime.split(':').map(Number);
+      
+      // Set the departure datetime
+      tripDate.setHours(hours, minutes, 0, 0);
+      
+      // Compare with current time
+      const now = new Date();
+      return now > tripDate;
+    } catch (error) {
+      console.error('Error checking trip departure time:', error);
+      return false;
+    }
+  };
 
   // ✅ UPDATED: Load appropriate bookings based on role
   const loadBookingHistory = async () => {
@@ -74,10 +99,19 @@ const BookingHistoryPanel = () => {
     setFilteredBookings(filtered);
   };
 
-  // ✅ Handle cancel booking
+  // ✅ Handle cancel booking - now checks if trip has departed
   const handleCancelBooking = async () => {
     if (!selectedBooking || !cancelReason.trim()) {
       alert('Please provide a cancellation reason');
+      return;
+    }
+
+    // ✅ Check if trip has already departed
+    if (isTripDeparted(selectedBooking)) {
+      alert('Cannot cancel - this trip has already departed');
+      setShowCancelModal(false);
+      setSelectedBooking(null);
+      setCancelReason('');
       return;
     }
 
@@ -115,7 +149,19 @@ const BookingHistoryPanel = () => {
     transportApiService.printTicketHTML(ticketNumber);
   };
 
-  const getStatusBadge = (status) => {
+  const getStatusBadge = (booking) => {
+    const isDeparted = isTripDeparted(booking);
+    
+    // Show EXPIRED badge for confirmed tickets that have departed
+    if (isDeparted && booking.bookingStatus === 'CONFIRMED') {
+      return (
+        <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold">
+          <Clock className="w-4 h-4" />
+          EXPIRED
+        </div>
+      );
+    }
+
     const badges = {
       CONFIRMED: {
         bg: 'bg-green-100',
@@ -134,12 +180,12 @@ const BookingHistoryPanel = () => {
       }
     };
 
-    const badge = badges[status] || badges.CONFIRMED;
+    const badge = badges[booking.bookingStatus] || badges.CONFIRMED;
 
     return (
       <div className={`flex items-center gap-2 px-3 py-1 ${badge.bg} ${badge.text} rounded-full text-sm font-semibold`}>
         {badge.icon}
-        {status}
+        {booking.bookingStatus}
       </div>
     );
   };
@@ -263,142 +309,164 @@ const BookingHistoryPanel = () => {
           </p>
 
           <div className="grid grid-cols-1 gap-4">
-            {filteredBookings.map((booking) => (
-              <div
-                key={booking.id}
-                className="bg-white border border-gray-200 rounded-xl p-6 hover:border-blue-400 hover:shadow-md transition-all"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                      <Ticket className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-lg font-bold text-gray-800">{booking.ticketNumber}</p>
-                      <p className="text-sm text-gray-500">
-                        Booked on {new Date(booking.bookingDate).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-                  {getStatusBadge(booking.bookingStatus)}
-                </div>
+            {filteredBookings.map((booking) => {
+              const isDeparted = isTripDeparted(booking);
+              const canCancel = booking.bookingStatus === 'CONFIRMED' && !isDeparted;
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <p className="text-xs text-gray-500">Route</p>
-                      <p className="font-semibold text-gray-800">
-                        {booking.dailyTrip.route.origin} → {booking.dailyTrip.route.destination}
-                      </p>
+              return (
+                <div
+                  key={booking.id}
+                  className="bg-white border border-gray-200 rounded-xl p-6 hover:border-blue-400 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Ticket className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-gray-800">{booking.ticketNumber}</p>
+                        <p className="text-sm text-gray-500">
+                          Booked on {new Date(booking.bookingDate).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
                     </div>
+                    {getStatusBadge(booking)}
                   </div>
 
-                  <div className="flex items-start gap-3">
-                    <Calendar className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <p className="text-xs text-gray-500">Travel Date</p>
-                      <p className="font-semibold text-gray-800">
-                        {new Date(booking.dailyTrip.tripDate).toLocaleDateString()}
-                      </p>
-                      <p className="text-sm text-gray-600">{booking.dailyTrip.timeSlot.departureTime}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="flex items-start gap-3">
+                      <MapPin className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-xs text-gray-500">Route</p>
+                        <p className="font-semibold text-gray-800">
+                          {booking.dailyTrip.route.origin} → {booking.dailyTrip.route.destination}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <Calendar className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-xs text-gray-500">Travel Date</p>
+                        <p className="font-semibold text-gray-800">
+                          {new Date(booking.dailyTrip.tripDate).toLocaleDateString()}
+                        </p>
+                        <p className="text-sm text-gray-600">{booking.dailyTrip.timeSlot.departureTime}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-3">
+                      <User className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="text-xs text-gray-500">Passenger</p>
+                        <p className="font-semibold text-gray-800">{booking.customer.names}</p>
+                        <p className="text-sm text-gray-600 flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {booking.customer.phoneNumber}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3">
-                    <User className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-                    <div>
-                      <p className="text-xs text-gray-500">Passenger</p>
-                      <p className="font-semibold text-gray-800">{booking.customer.names}</p>
-                      <p className="text-sm text-gray-600 flex items-center gap-1">
-                        <Phone className="w-3 h-3" />
-                        {booking.customer.phoneNumber}
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      <div>
+                        <p className="text-sm text-gray-600">Seat: <span className="font-semibold">{booking.seatNumber}</span></p>
+                        <p className="text-sm text-gray-600">Vehicle: <span className="font-semibold">{booking.dailyTrip.vehicle.plateNo}</span></p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Payment</p>
+                        <p className="text-sm font-semibold text-gray-800">{booking.paymentMethod}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">Amount</p>
+                      <p className="text-xl font-bold text-blue-600">RWF {booking.price}</p>
+                    </div>
+                  </div>
+
+                  {booking.bookingStatus === 'CANCELLED' && booking.cancellationReason && (
+                    <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm text-red-800">
+                        <strong>Cancellation Reason:</strong> {booking.cancellationReason}
+                      </p>
+                      {booking.cancelledAt && (
+                        <p className="text-xs text-red-600 mt-1">
+                          Cancelled on {new Date(booking.cancelledAt).toLocaleString()}
+                          {booking.cancelledBy && ` by ${booking.cancelledBy}`}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ✅ Expired Warning */}
+                  {isDeparted && booking.bookingStatus === 'CONFIRMED' && (
+                    <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <p className="text-sm text-yellow-800 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <strong>This ticket has expired - the trip has already departed</strong>
                       </p>
                     </div>
-                  </div>
-                </div>
+                  )}
 
-                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
-                  <div className="flex items-center gap-6">
-                    <div>
-                      <p className="text-sm text-gray-600">Seat: <span className="font-semibold">{booking.seatNumber}</span></p>
-                      <p className="text-sm text-gray-600">Vehicle: <span className="font-semibold">{booking.dailyTrip.vehicle.plateNo}</span></p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-600">Payment</p>
-                      <p className="text-sm font-semibold text-gray-800">{booking.paymentMethod}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-600">Amount</p>
-                    <p className="text-xl font-bold text-blue-600">RWF {booking.price}</p>
-                  </div>
-                </div>
+                  {/* ✅ ACTION BUTTONS */}
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
+                    <button
+                      onClick={() => handlePrintTicket(booking.ticketNumber)}
+                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                    >
+                      <Printer className="w-4 h-4" />
+                      Print Ticket
+                    </button>
 
-                {booking.bookingStatus === 'CANCELLED' && booking.cancellationReason && (
-                  <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
-                    <p className="text-sm text-red-800">
-                      <strong>Cancellation Reason:</strong> {booking.cancellationReason}
-                    </p>
-                    {booking.cancelledAt && (
-                      <p className="text-xs text-red-600 mt-1">
-                        Cancelled on {new Date(booking.cancelledAt).toLocaleString()}
-                        {booking.cancelledBy && ` by ${booking.cancelledBy}`}
-                      </p>
+                    <button
+                      onClick={() => handleDownloadTicket(booking.ticketNumber)}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+
+                    {/* ✅ Only show cancel button for confirmed bookings that haven't departed */}
+                    {canCancel && (
+                      <button
+                        onClick={() => {
+                          setSelectedBooking(booking);
+                          setShowCancelModal(true);
+                        }}
+                        disabled={cancellingId === booking.id}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed ml-auto"
+                      >
+                        {cancellingId === booking.id ? (
+                          <>
+                            <Loader className="w-4 h-4 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          <>
+                            <XOctagon className="w-4 h-4" />
+                            Cancel Booking
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {/* ✅ Show reason why cancel is disabled */}
+                    {!canCancel && booking.bookingStatus === 'CONFIRMED' && isDeparted && (
+                      <div className="ml-auto text-sm text-gray-500 italic">
+                        Cannot cancel - trip has departed
+                      </div>
                     )}
                   </div>
-                )}
-
-                {/* ✅ ACTION BUTTONS */}
-                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
-                  <button
-                    onClick={() => handlePrintTicket(booking.ticketNumber)}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                  >
-                    <Printer className="w-4 h-4" />
-                    Print Ticket
-                  </button>
-
-                  <button
-                    onClick={() => handleDownloadTicket(booking.ticketNumber)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-
-                  {/* ✅ Only show cancel button for confirmed bookings */}
-                  {booking.bookingStatus === 'CONFIRMED' && (
-                    <button
-                      onClick={() => {
-                        setSelectedBooking(booking);
-                        setShowCancelModal(true);
-                      }}
-                      disabled={cancellingId === booking.id}
-                      className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm disabled:bg-gray-400 disabled:cursor-not-allowed ml-auto"
-                    >
-                      {cancellingId === booking.id ? (
-                        <>
-                          <Loader className="w-4 h-4 animate-spin" />
-                          Cancelling...
-                        </>
-                      ) : (
-                        <>
-                          <XOctagon className="w-4 h-4" />
-                          Cancel Booking
-                        </>
-                      )}
-                    </button>
-                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

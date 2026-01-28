@@ -232,25 +232,50 @@ class TransportApiService {
     });
   }
 
-  // ✅ NEW: Get current user's active bookings
   async getMyActiveBookings() {
     return this.request('/bookings/my-bookings');
   }
 
-  // ✅ NEW: Get current user's booking history
   async getMyBookingHistory() {
     return this.request('/bookings/my-history');
   }
 
-  // ✅ NEW: Get all bookings history (for receptionist/admin/manager)
   async getAllBookingsHistory() {
     return this.request('/bookings/all-history');
   }
 
-  // ✅ UPDATED: For admin/manager/receptionist only
   async getTodayBookings() {
     return this.request('/bookings/today');
   }
+
+  /**
+   * ✅ PAYPACK: Create booking with payment
+   */
+  async createBookingWithPayment(bookingData) {
+    return this.request('/bookings/with-payment', {
+      method: 'POST',
+      body: JSON.stringify(bookingData)
+    });
+  }
+
+  /**
+   * ✅ PAYPACK: Check payment status
+   */
+  async checkPaymentStatus(paypackRef) {
+    return this.request(`/bookings/payment-status/${paypackRef}`);
+  }
+
+  /**
+   * ✅ PAYPACK: Confirm payment
+   */
+  async confirmPayment(paypackRef) {
+    return this.request(`/bookings/confirm-payment/${paypackRef}`, {
+      method: 'POST'
+    });
+  }
+
+  // ❌ REMOVED: getPaymentLink() - FlutterWave only, not needed for Paypack
+
 
   // ============ TICKET PRINTING ============
   async printTicket(ticketNumber) {

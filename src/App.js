@@ -138,10 +138,18 @@ const App = () => {
         return <MyPackagesPanel />;
       
       case 'my-bookings':
-        return <MyBookingsPanel />;
+        // ✅ Use combined component for regular users
+        if (user.role === USER_ROLES.OTHER_USER) {
+          return <MyBookingsPanel />;
+        }
+        return <DashboardContent />;
       
       case 'booking-history':
-        return <BookingHistoryPanel />;
+        // ✅ Staff members still use BookingHistoryPanel
+        if (user.role === USER_ROLES.ADMIN || user.role === USER_ROLES.MANAGER || user.role === USER_ROLES.RECEPTIONIST) {
+          return <BookingHistoryPanel />;
+        }
+        return <DashboardContent />;
       
       case 'incidents':
         return <IncidentManagement />;

@@ -13,7 +13,9 @@ import {
   ArrowDown,
   Search,
   PackageCheck,
-  Loader
+  Loader,
+  Truck,
+  CheckCircle
 } from 'lucide-react';
 import transportApiService from '../../services/transportApiService';
 import packageApiService from '../../services/packageApiService';
@@ -56,8 +58,20 @@ const ReceptionistDashboard = () => {
         packageApiService.getCollectedPackages().catch(() => [])
       ]);
 
-      // Calculate revenue
-      const todayRevenue = todayBookings.reduce((sum, b) => sum + (b.totalAmount || 0), 0);
+      console.log('📊 Sample Booking:', todayBookings[0]);
+
+      // ✅ FIXED: Calculate revenue with multiple field name attempts
+      const todayRevenue = todayBookings.reduce((sum, b) => {
+        const amount = b.totalAmount || 
+                      b.amount || 
+                      b.price || 
+                      b.fare || 
+                      b.totalPrice || 
+                      b.ticketPrice || 
+                      b.cost ||
+                      0;
+        return sum + parseFloat(amount);
+      }, 0);
       
       // Calculate weekly bookings (estimate)
       const lastWeek = new Date();
@@ -83,36 +97,136 @@ const ReceptionistDashboard = () => {
         ? todayRevenue / todayBookings.length 
         : 0;
 
-      // Find top route (most bookings)
+      // ✅ Find top route with proper field extraction (SAME AS MANAGER)
       const routeCounts = {};
       todayBookings.forEach(b => {
-        const route = `${b.origin} → ${b.destination}`;
+        // Extract origin and destination from multiple possible locations
+        const origin = b.origin || 
+                      b.route?.origin || 
+                      b.dailyTrip?.route?.origin ||
+                      b.trip?.origin ||
+                      'Origin';
+        
+        const destination = b.destination || 
+                           b.route?.destination || 
+                           b.dailyTrip?.route?.destination ||
+                           b.trip?.destination ||
+                           'Destination';
+        
+        const route = `${origin} → ${destination}`;
         routeCounts[route] = (routeCounts[route] || 0) + 1;
       });
-      const topRoute = Object.entries(routeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'N/A';
+      
+      const topRoute = Object.entries(routeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'No bookings yet';
 
-      // Recent activities
+      console.log('🏆 Top Route:', topRoute, 'Route Counts:', routeCounts);
+
+      // ✅ Recent booking activities with proper field access (SAME AS MANAGER)
       const recentBookings = todayBookings
-        .sort((a, b) => new Date(b.bookingDate) - new Date(b.bookingDate))
+        .sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate))
         .slice(0, 5)
-        .map(b => ({
-          type: 'booking',
-          title: `Ticket #${b.ticketNumber}`,
-          description: `${b.passengerName} - ${b.origin} to ${b.destination}`,
-          time: new Date(b.bookingDate),
-          amount: b.totalAmount
-        }));
+        .map(b => {
+          // Extract passenger name
+          const passengerName = b.passengerName || 
+                               b.customer?.names || 
+                               b.customer?.name ||
+                               b.customerName ||
+                               'Guest';
+          
+          // Extract origin and destination (SAME AS MANAGER)
+          const origin = b.origin || 
+                        b.route?.origin || 
+                        b.dailyTrip?.route?.origin ||
+                        b.trip?.origin ||
+                        'Origin';
+          
+          const destination = b.destination || 
+                             b.route?.destination || 
+                             b.dailyTrip?.route?.destination ||
+                             b.trip?.destination ||
+                             'Destination';
+          
+          return {
+            type: 'booking',
+            activityType: 'ticket_booking',
+            title: `Ticket #${b.ticketNumber}`,
+            description: `${passengerName} - ${origin} to ${destination}`,
+            time: new Date(b.bookingDate || new Date()),
+            amount: b.totalAmount || b.amount || b.price || 0
+          };
+        });
 
-      const recentPackages = arrivedPackages
-        .sort((a, b) => new Date(b.arrivalTime || b.createdAt) - new Date(a.arrivalTime || a.createdAt))
-        .slice(0, 5)
-        .map(p => ({
-          type: 'package',
-          title: `Package ${p.trackingNumber}`,
-          description: `${p.senderName} → ${p.receiverName}`,
-          time: new Date(p.arrivalTime || p.createdAt),
-          status: p.status
-        }));
+      // ✅ FIXED: Build comprehensive package activities with all states
+      const recentPackages = [];
+
+      // Package Booked (In Transit)
+      inTransitPackages
+        .sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate))
+        .slice(0, 2)
+        .forEach(p => {
+          const senderName = p.senderNames || p.senderName || 'Sender';
+          const receiverName = p.receiverNames || p.receiverName || 'Receiver';
+          
+          recentPackages.push({
+            type: 'package',
+            activityType: 'package_booked',
+            title: `Package ${p.trackingNumber}`,
+            description: `${senderName} → ${receiverName} (In Transit)`,
+            time: new Date(p.bookingDate || new Date()),
+            status: 'IN_TRANSIT'
+          });
+        });
+
+      // Package Arrived
+      arrivedPackages
+        .sort((a, b) => {
+          const timeA = new Date(b.actualArrivalTime || b.expectedArrivalTime || b.bookingDate || new Date());
+          const timeB = new Date(a.actualArrivalTime || a.expectedArrivalTime || a.bookingDate || new Date());
+          return timeA - timeB;
+        })
+        .slice(0, 2)
+        .forEach(p => {
+          const senderName = p.senderNames || p.senderName || 'Sender';
+          const receiverName = p.receiverNames || p.receiverName || 'Receiver';
+          const arrivalTime = p.actualArrivalTime || 
+                             p.expectedArrivalTime ||
+                             p.bookingDate || 
+                             new Date();
+          
+          recentPackages.push({
+            type: 'package',
+            activityType: 'package_arrived',
+            title: `Package ${p.trackingNumber}`,
+            description: `${senderName} → ${receiverName} (Arrived)`,
+            time: new Date(arrivalTime),
+            status: 'ARRIVED'
+          });
+        });
+
+      // Package Collected
+      collectedPackages
+        .sort((a, b) => {
+          const timeA = new Date(b.collectedAt || b.actualArrivalTime || b.bookingDate || new Date());
+          const timeB = new Date(a.collectedAt || a.actualArrivalTime || a.bookingDate || new Date());
+          return timeA - timeB;
+        })
+        .slice(0, 2)
+        .forEach(p => {
+          const receiverName = p.collectedByName || p.receiverNames || p.receiverName || 'Recipient';
+          const collectionTime = p.collectedAt || 
+                                p.actualArrivalTime ||
+                                p.bookingDate || 
+                                new Date();
+          
+          recentPackages.push({
+            type: 'package',
+            activityType: 'package_collected',
+            title: `Package ${p.trackingNumber}`,
+            description: `Collected by ${receiverName}`,
+            time: new Date(collectionTime),
+            status: 'COLLECTED'
+          });
+        });
 
       setDashboardData({
         bookings: {
@@ -166,21 +280,50 @@ const ReceptionistDashboard = () => {
   );
 
   const ActivityItem = ({ activity }) => {
+    // ✅ Enhanced icons and colors for different activity types
+    const getActivityConfig = () => {
+      switch(activity.activityType) {
+        case 'ticket_booking':
+          return {
+            icon: <Ticket className="w-5 h-5 text-blue-600" />,
+            bgColor: 'bg-blue-100'
+          };
+        case 'package_booked':
+          return {
+            icon: <Package className="w-5 h-5 text-blue-600" />,
+            bgColor: 'bg-blue-100'
+          };
+        case 'package_arrived':
+          return {
+            icon: <Truck className="w-5 h-5 text-orange-600" />,
+            bgColor: 'bg-orange-100'
+          };
+        case 'package_collected':
+          return {
+            icon: <CheckCircle className="w-5 h-5 text-green-600" />,
+            bgColor: 'bg-green-100'
+          };
+        default:
+          return {
+            icon: activity.type === 'booking' ? 
+              <Ticket className="w-5 h-5 text-blue-600" /> : 
+              <Package className="w-5 h-5 text-purple-600" />,
+            bgColor: activity.type === 'booking' ? 'bg-blue-100' : 'bg-purple-100'
+          };
+      }
+    };
+
+    const config = getActivityConfig();
+
     return (
       <div className="flex items-start gap-4 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-          activity.type === 'booking' ? 'bg-blue-100' : 'bg-purple-100'
-        }`}>
-          {activity.type === 'booking' ? (
-            <Ticket className="w-5 h-5 text-blue-600" />
-          ) : (
-            <Package className="w-5 h-5 text-purple-600" />
-          )}
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${config.bgColor}`}>
+          {config.icon}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-gray-900">{activity.title}</p>
-            {activity.amount && (
+            {activity.amount && activity.amount > 0 && (
               <span className="text-sm font-bold text-green-600">
                 {activity.amount.toLocaleString()} RWF
               </span>
@@ -197,7 +340,7 @@ const ReceptionistDashboard = () => {
 
   const TripCard = ({ trip }) => {
     const tripDate = new Date(trip.tripDate);
-    const availabilityPercent = ((trip.availableSeats / trip.capacity) * 100).toFixed(0);
+    const availabilityPercent = trip.capacity > 0 ? ((trip.availableSeats / trip.capacity) * 100).toFixed(0) : 0;
     const isFullySold = trip.availableSeats === 0;
     const isAlmostFull = availabilityPercent < 20;
 
@@ -208,13 +351,16 @@ const ReceptionistDashboard = () => {
             <div className="flex items-center gap-2 mb-2">
               <MapPin className="w-4 h-4 text-blue-600" />
               <p className="font-semibold text-gray-900 text-sm">
-                {trip.origin} → {trip.destination}
+                {trip.origin || 'Origin'} → {trip.destination || 'Destination'}
               </p>
             </div>
             <div className="flex items-center gap-4 text-xs text-gray-600">
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                {new Date(trip.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {trip.departureTime ? 
+                  new Date(trip.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) :
+                  'N/A'
+                }
               </span>
               <span className="flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
@@ -224,7 +370,7 @@ const ReceptionistDashboard = () => {
           </div>
           <div className="text-right">
             <p className="text-lg font-bold text-gray-900">
-              {trip.price?.toLocaleString()} <span className="text-xs text-gray-500">RWF</span>
+              {trip.price?.toLocaleString() || '0'} <span className="text-xs text-gray-500">RWF</span>
             </p>
           </div>
         </div>
@@ -238,7 +384,7 @@ const ReceptionistDashboard = () => {
             {isFullySold ? 'Sold Out' : `${trip.availableSeats} seats left`}
           </div>
           <div className="text-xs text-gray-500">
-            {trip.vehicleType}
+            {trip.vehicleType || 'Bus'}
           </div>
         </div>
       </div>
@@ -330,13 +476,18 @@ const ReceptionistDashboard = () => {
           subtitle="Ready for booking"
           color="teal"
         />
-        <StatCard
-          icon={TrendingUp}
-          title="Top Route"
-          value={dashboardData.statistics.topRoute}
-          subtitle="Most booked today"
-          color="pink"
-        />
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+          <div className="flex items-start justify-between mb-4">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-600 to-gray-800 flex items-center justify-center shadow-lg">
+              <TrendingUp className="w-7 h-7 text-white" />
+            </div>
+          </div>
+          <div>
+            <p className="text-gray-600 text-sm font-medium mb-1">Top Route</p>
+            <p className="text-xl font-bold text-gray-900 mb-1">{dashboardData.statistics.topRoute}</p>
+            <p className="text-gray-500 text-xs">Most booked today</p>
+          </div>
+        </div>
       </div>
 
       {/* Main Content Grid */}
@@ -374,19 +525,22 @@ const ReceptionistDashboard = () => {
                   <div className="flex items-center gap-2 mb-1">
                     <Clock className="w-3 h-3 text-blue-600" />
                     <span className="text-xs font-semibold text-gray-900">
-                      {new Date(trip.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {trip.departureTime ? 
+                        new Date(trip.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) :
+                        'N/A'
+                      }
                     </span>
                   </div>
                   <p className="text-sm font-medium text-gray-900">
-                    {trip.origin} → {trip.destination}
+                    {trip.origin || 'Origin'} → {trip.destination || 'Destination'}
                   </p>
                   <p className="text-xs text-gray-600 mt-1">
-                    {trip.availableSeats} / {trip.capacity} seats available
+                    {trip.availableSeats || 0} / {trip.capacity || 0} seats available
                   </p>
                 </div>
               ))
             ) : (
-              <p className="text-center text-gray-500 py-8 text-sm">No trips today</p>
+              <p className="text-center text-gray-500 py-8 text-sm">No trips scheduled today</p>
             )}
           </div>
         </div>
@@ -406,7 +560,7 @@ const ReceptionistDashboard = () => {
           ) : (
             <div className="col-span-full text-center py-12">
               <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600">No trips available</p>
+              <p className="text-gray-600">No trips available for booking</p>
             </div>
           )}
         </div>
@@ -423,7 +577,12 @@ const ReceptionistDashboard = () => {
           </div>
           <div className="text-center">
             <p className="text-blue-100 text-sm mb-1">Revenue</p>
-            <p className="text-3xl font-bold">{(dashboardData.bookings.revenue / 1000).toFixed(1)}K</p>
+            <p className="text-3xl font-bold">
+              {dashboardData.bookings.revenue >= 1000 
+                ? `${(dashboardData.bookings.revenue / 1000).toFixed(1)}K`
+                : dashboardData.bookings.revenue
+              }
+            </p>
             <p className="text-blue-200 text-xs mt-1">RWF</p>
           </div>
           <div className="text-center">

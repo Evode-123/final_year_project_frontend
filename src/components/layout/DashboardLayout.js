@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Bell, Search, Menu, User, LayoutDashboard, Settings, Car, Package, Shield, Ticket, MessageSquare, AlertCircle, Calendar, History, PackageCheck, FileText } from 'lucide-react';
+import { LogOut, Bell, Search, Menu, User, LayoutDashboard, Settings, Car, Package, Shield, Ticket, MessageSquare, AlertCircle, Calendar, PackageCheck, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { USER_ROLES } from '../../utils/constants';
 import feedbackApiService from '../../services/feedbackApiService';
@@ -67,7 +67,7 @@ const DashboardLayout = ({ children, activePage, setActivePage }) => {
     [USER_ROLES.RECEPTIONIST]: [
       { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', id: 'dashboard' },
       { icon: <Search className="w-5 h-5" />, label: 'Book Tickets', id: 'booking' },
-      { icon: <History className="w-5 h-5" />, label: 'Booking History', id: 'booking-history' },
+      { icon: <Ticket className="w-5 h-5" />, label: 'Booking History', id: 'booking-history' },
       { icon: <Package className="w-5 h-5" />, label: 'Package Delivery', id: 'packages' },
       { icon: <Settings className="w-5 h-5" />, label: 'Settings', id: 'settings' },
     ],
@@ -82,7 +82,6 @@ const DashboardLayout = ({ children, activePage, setActivePage }) => {
       { icon: <LayoutDashboard className="w-5 h-5" />, label: 'Dashboard', id: 'dashboard' },
       { icon: <Search className="w-5 h-5" />, label: 'Book Tickets', id: 'booking' },
       { icon: <Ticket className="w-5 h-5" />, label: 'My Bookings', id: 'my-bookings' },
-      { icon: <History className="w-5 h-5" />, label: 'Booking History', id: 'booking-history' },
       { icon: <PackageCheck className="w-5 h-5" />, label: 'My Packages', id: 'my-packages' },
       { icon: <MessageSquare className="w-5 h-5" />, label: 'Feedback', id: 'feedback', badgeType: 'feedback' },
       { icon: <Settings className="w-5 h-5" />, label: 'Settings', id: 'settings' },
