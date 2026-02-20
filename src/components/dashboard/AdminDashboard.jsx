@@ -6,7 +6,7 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
-  DollarSign,
+  Banknote,
   Calendar,
   MapPin,
   Shield,
@@ -412,7 +412,7 @@ const AdminDashboard = () => {
           color="green"
         />
         <StatCard
-          icon={DollarSign}
+          icon={Banknote}
           title="Today's Revenue"
           value={`${dashboardData.bookings.revenue.toLocaleString()} RWF`}
           subtitle={`${dashboardData.bookings.today} bookings today`}
@@ -463,7 +463,7 @@ const AdminDashboard = () => {
         <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-medium text-gray-600">Package Revenue</p>
-            <DollarSign className="w-5 h-5 text-purple-600" />
+            <Banknote className="w-5 h-5 text-purple-600" />
           </div>
           <p className="text-2xl font-bold text-purple-600">
             {dashboardData.packages.totalRevenue.toLocaleString()}

@@ -13,7 +13,8 @@ import {
   AlertCircle,
   Send,
   Weight,
-  DollarSign
+  DollarSign,
+  Home
 } from 'lucide-react';
 import transportApiService from '../../services/transportApiService';
 import packageApiService from '../../services/packageApiService';
@@ -22,6 +23,81 @@ const PAYMENT_METHODS = {
   CASH: 'CASH',
   MOBILE_MONEY: 'MOBILE_MONEY',
   CARD: 'CARD'
+};
+
+// ── Validators ──────────────────────────────────────────────
+const validators = {
+  senderNames: (v) => {
+    if (!v.trim()) return 'Sender full name is required.';
+    if (v.trim().length < 3) return 'Name must be at least 3 characters.';
+    if (v.length > 70) return 'Name cannot exceed 70 characters.';
+    if (!/^[a-zA-Z\s'-]+$/.test(v)) return 'Only letters, spaces, hyphens, or apostrophes.';
+    if (!v.trim().includes(' ')) return 'Please enter both first and last name.';
+    return '';
+  },
+  senderPhone: (v) => {
+    if (!v.trim()) return 'Sender phone is required.';
+    if (!/^\d+$/.test(v)) return 'Phone must contain digits only.';
+    if (v.length !== 10) return 'Phone must be exactly 10 digits.';
+    if (!v.startsWith('07')) return 'Phone must start with 07.';
+    return '';
+  },
+  senderEmail: (v) => {
+    if (!v.trim()) return '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Enter a valid email address.';
+    return '';
+  },
+  senderAddress: (v) => {
+    if (!v.trim()) return '';
+    if (v.length > 100) return 'Address cannot exceed 100 characters.';
+    return '';
+  },
+  receiverNames: (v) => {
+    if (!v.trim()) return 'Receiver full name is required.';
+    if (v.trim().length < 3) return 'Name must be at least 3 characters.';
+    if (v.length > 70) return 'Name cannot exceed 70 characters.';
+    if (!/^[a-zA-Z\s'-]+$/.test(v)) return 'Only letters, spaces, hyphens, or apostrophes.';
+    if (!v.trim().includes(' ')) return 'Please enter both first and last name.';
+    return '';
+  },
+  receiverPhone: (v) => {
+    if (!v.trim()) return 'Receiver phone is required.';
+    if (!/^\d+$/.test(v)) return 'Phone must contain digits only.';
+    if (v.length !== 10) return 'Phone must be exactly 10 digits.';
+    if (!v.startsWith('07')) return 'Phone must start with 07.';
+    return '';
+  },
+  receiverEmail: (v) => {
+    if (!v.trim()) return '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) return 'Enter a valid email address.';
+    return '';
+  },
+  receiverIdNumber: (v) => {
+    if (!v.trim()) return 'Receiver National ID is required.';
+    if (!/^\d+$/.test(v)) return 'ID must contain digits only.';
+    if (v.length !== 16) return 'ID must be exactly 16 digits.';
+    return '';
+  },
+  receiverAddress: (v) => {
+    if (!v.trim()) return '';
+    if (v.length > 100) return 'Address cannot exceed 100 characters.';
+    return '';
+  },
+  packageWeight: (v) => {
+    if (!v) return 'Package weight is required.';
+    if (parseFloat(v) <= 0) return 'Weight must be greater than 0.';
+    if (parseFloat(v) > 500) return 'Weight cannot exceed 500 kg.';
+    return '';
+  },
+  paymentMethod: (v) => {
+    if (!v) return 'Please select a payment method.';
+    return '';
+  },
+};
+
+const validate = (field, value) => {
+  const fn = validators[field];
+  return fn ? fn(value) : '';
 };
 
 const PackageBookingManagement = () => {
@@ -36,7 +112,7 @@ const PackageBookingManagement = () => {
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [viewMode, setViewMode] = useState('book'); // 'book' or 'history'
+  const [viewMode, setViewMode] = useState('book');
 
   const [searchData, setSearchData] = useState({
     origin: '',
@@ -44,32 +120,16 @@ const PackageBookingManagement = () => {
     travelDate: new Date().toISOString().split('T')[0]
   });
 
-  const [packageData, setPackageData] = useState({
-    // Sender info
-    senderNames: '',
-    senderPhone: '',
-    senderEmail: '',
-    senderIdNumber: '',
-    
-    // Receiver info
-    receiverNames: '',
-    receiverPhone: '',
-    receiverEmail: '',
-    receiverIdNumber: '',
-    
-    // Package details
-    packageDescription: '',
-    packageWeight: '',
-    packageValue: '',
-    isFragile: false,
-    
-    // Payment
-    paymentMethod: '' // No default - user must select
-  });
+  const emptyForm = {
+    senderNames: '', senderPhone: '', senderEmail: '', senderIdNumber: '', senderAddress: '',
+    receiverNames: '', receiverPhone: '', receiverEmail: '', receiverIdNumber: '', receiverAddress: '',
+    packageDescription: '', packageWeight: '', packageValue: '', isFragile: false, paymentMethod: ''
+  };
 
-  useEffect(() => {
-    loadInitialData();
-  }, []);
+  const [packageData, setPackageData] = useState(emptyForm);
+  const [formErrors, setFormErrors] = useState({});
+
+  useEffect(() => { loadInitialData(); }, []);
 
   const loadInitialData = async () => {
     try {
@@ -80,14 +140,8 @@ const PackageBookingManagement = () => {
       ]);
       setAvailableTrips(trips);
       setRoutes(routesData);
-      
-      // Extract unique origins and destinations
-      const uniqueOrigins = [...new Set(routesData.map(route => route.origin))].sort();
-      const uniqueDestinations = [...new Set(routesData.map(route => route.destination))].sort();
-      
-      setOrigins(uniqueOrigins);
-      setDestinations(uniqueDestinations);
-      
+      setOrigins([...new Set(routesData.map(r => r.origin))].sort());
+      setDestinations([...new Set(routesData.map(r => r.destination))].sort());
       await loadBookingHistory();
     } catch (err) {
       setError('Failed to load data: ' + err.message);
@@ -98,27 +152,59 @@ const PackageBookingManagement = () => {
 
   const loadBookingHistory = async () => {
     try {
-      // Get all packages (in-transit, arrived, collected)
       const [inTransit, arrived, collected] = await Promise.all([
         packageApiService.getInTransitPackages(),
         packageApiService.getArrivedPackages(),
         packageApiService.getCollectedPackages()
       ]);
-      
-      // Combine all packages and sort by booking date (newest first)
-      const allPackages = [...inTransit, ...arrived, ...collected];
-      allPackages.sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate));
-      
-      setBookingHistory(allPackages);
+      const all = [...inTransit, ...arrived, ...collected];
+      all.sort((a, b) => new Date(b.bookingDate) - new Date(a.bookingDate));
+      setBookingHistory(all);
     } catch (err) {
       console.error('Failed to load booking history:', err);
     }
   };
 
+  // ── Field change handler with validation ──
+  const handleChange = (field, value) => {
+    setPackageData(prev => ({ ...prev, [field]: value }));
+    const err = validate(field, value);
+    setFormErrors(prev => ({ ...prev, [field]: err }));
+  };
+
+  // ── Controlled input handlers ──
+  const handleNamesChange = (field) => (e) => {
+    const raw = e.target.value.replace(/[^a-zA-Z\s'-]/g, '').slice(0, 70);
+    handleChange(field, raw);
+  };
+
+  const handlePhoneChange = (field) => (e) => {
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
+    if (raw.length >= 2 && !raw.startsWith('07')) return;
+    handleChange(field, raw);
+  };
+
+  const handleIdChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, '').slice(0, 16);
+    handleChange('receiverIdNumber', raw);
+  };
+
+  const runAllValidations = () => {
+    const requiredFields = ['senderNames', 'senderPhone', 'senderEmail', 'senderAddress',
+      'receiverNames', 'receiverPhone', 'receiverEmail', 'receiverIdNumber', 'receiverAddress',
+      'packageWeight', 'paymentMethod'];
+    const errors = {};
+    requiredFields.forEach(f => {
+      const err = validate(f, packageData[f] ?? '');
+      if (err) errors[f] = err;
+    });
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSearchTrips = async (e) => {
     e.preventDefault();
     setError('');
-    
     try {
       setLoading(true);
       const trips = await transportApiService.searchTrips(searchData);
@@ -133,23 +219,12 @@ const PackageBookingManagement = () => {
   };
 
   const handleClearFilter = async () => {
-    setError('');
-    setSuccess('');
-    
-    // Reset search data to default
-    setSearchData({
-      origin: '',
-      destination: '',
-      travelDate: new Date().toISOString().split('T')[0]
-    });
-    
-    // Reload all available trips
+    setError(''); setSuccess('');
+    setSearchData({ origin: '', destination: '', travelDate: new Date().toISOString().split('T')[0] });
     try {
       setLoading(true);
       const trips = await transportApiService.getAvailableTrips();
       setAvailableTrips(trips);
-      setSuccess('Filter cleared - showing all available trips');
-      setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError('Failed to load trips: ' + err.message);
     } finally {
@@ -164,36 +239,16 @@ const PackageBookingManagement = () => {
 
   const calculateEstimatedPrice = () => {
     if (!packageData.packageWeight || !selectedTrip) return 'TBD';
-    
     const weight = parseFloat(packageData.packageWeight);
-    const basePrice = weight * 1000; // 1000 RWF per kg
-    const ticketPrice = parseFloat(selectedTrip.price);
-    const premium = ticketPrice * 0.30;
-    const total = basePrice + premium;
-    
-    return Math.max(total, 2000).toFixed(0); // Minimum 2000 RWF
+    const total = weight * 1000 + parseFloat(selectedTrip.price) * 0.30;
+    return Math.max(total, 2000).toFixed(0);
   };
 
   const handleBookPackage = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    if (!selectedTrip) {
-      setError('Please select a trip first');
-      return;
-    }
-
-    // Validate required fields
-    if (!packageData.receiverIdNumber) {
-      setError('Receiver National ID is required');
-      return;
-    }
-
-    if (!packageData.paymentMethod) {
-      setError('Please select a payment method');
-      return;
-    }
+    setError(''); setSuccess('');
+    if (!selectedTrip) { setError('Please select a trip first'); return; }
+    if (!runAllValidations()) { setError('Please fix the errors below before submitting.'); return; }
 
     try {
       setBookingLoading(true);
@@ -203,19 +258,10 @@ const PackageBookingManagement = () => {
         packageWeight: parseFloat(packageData.packageWeight),
         packageValue: packageData.packageValue ? parseFloat(packageData.packageValue) : null
       };
-
       const result = await packageApiService.bookPackage(bookingData);
-      
-      setSuccess(`Package booked successfully! Tracking Number: ${result.trackingNumber}`);
-      setSuccess(prevMsg => prevMsg + '\nSender and receiver have been notified via SMS and Email.');
-      
-      // Reset form
+      setSuccess(`Package booked! Tracking: ${result.trackingNumber}. Sender & receiver notified.`);
       resetForm();
-      
-      // Reload trips and booking history
       await loadInitialData();
-      
-      // Switch to history view to show the new booking
       setTimeout(() => setViewMode('history'), 2000);
     } catch (err) {
       setError('Failed to book package: ' + err.message);
@@ -225,32 +271,31 @@ const PackageBookingManagement = () => {
   };
 
   const resetForm = () => {
-    setPackageData({
-      senderNames: '',
-      senderPhone: '',
-      senderEmail: '',
-      senderIdNumber: '',
-      receiverNames: '',
-      receiverPhone: '',
-      receiverEmail: '',
-      receiverIdNumber: '',
-      packageDescription: '',
-      packageWeight: '',
-      packageValue: '',
-      isFragile: false,
-      paymentMethod: '' // No default - user must select
-    });
+    setPackageData(emptyForm);
+    setFormErrors({});
     setSelectedTrip(null);
     setShowBookingForm(false);
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  const formatDate = (d) => new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+  // ── Reusable FieldError ──
+  const FieldError = ({ field }) => formErrors[field] ? (
+    <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+      <AlertCircle className="w-3 h-3 flex-shrink-0" />
+      {formErrors[field]}
+    </p>
+  ) : null;
+
+  const inputClass = (field) =>
+    `w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
+      formErrors[field] ? 'border-red-400 bg-red-50' : 'border-gray-300'
+    }`;
+
+  const inputWithIconClass = (field) =>
+    `w-full pl-9 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm ${
+      formErrors[field] ? 'border-red-400 bg-red-50' : 'border-gray-300'
+    }`;
 
   if (loading && availableTrips.length === 0) {
     return (
@@ -262,7 +307,7 @@ const PackageBookingManagement = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header with View Toggle */}
+      {/* Header */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -270,50 +315,37 @@ const PackageBookingManagement = () => {
             <p className="text-gray-600 mt-1">Book packages for delivery on scheduled trips</p>
           </div>
         </div>
-
-        {/* View Mode Toggle */}
         <div className="flex gap-3">
           <button
             onClick={() => setViewMode('book')}
             className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
-              viewMode === 'book'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              viewMode === 'book' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            <PackageIcon className="w-5 h-5" />
-            Book New Package
+            <PackageIcon className="w-5 h-5" /> Book New Package
           </button>
           <button
             onClick={() => setViewMode('history')}
             className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
-              viewMode === 'history'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              viewMode === 'history' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            <Search className="w-5 h-5" />
-            Booking History ({bookingHistory.length})
+            <Search className="w-5 h-5" /> Booking History ({bookingHistory.length})
           </button>
         </div>
       </div>
 
-      {/* Alert Messages */}
+      {/* Alerts */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center justify-between">
           <span>{error}</span>
-          <button onClick={() => setError('')} className="text-red-700 hover:text-red-900">
-            <X className="w-5 h-5" />
-          </button>
+          <button onClick={() => setError('')}><X className="w-5 h-5" /></button>
         </div>
       )}
-
       {success && (
         <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
-          <div className="whitespace-pre-line">{success}</div>
-          <button onClick={() => setSuccess('')} className="text-green-700 hover:text-green-900">
-            <X className="w-5 h-5" />
-          </button>
+          <span>{success}</span>
+          <button onClick={() => setSuccess('')}><X className="w-5 h-5" /></button>
         </div>
       )}
 
@@ -322,34 +354,14 @@ const PackageBookingManagement = () => {
         <div className="bg-white rounded-lg shadow-md border border-gray-200">
           <div className="p-6 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-800">All Bookings</h2>
-            <p className="text-gray-600 text-sm mt-1">Complete history of all package bookings</p>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Tracking #
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Sender
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Receiver
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Route
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Booking Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
-                    Price
-                  </th>
+                  {['Tracking #', 'Status', 'Sender', 'Receiver', 'Route', 'Booking Date', 'Price'].map(h => (
+                    <th key={h} className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -358,112 +370,66 @@ const PackageBookingManagement = () => {
                     <td colSpan="7" className="px-6 py-12 text-center">
                       <PackageIcon className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                       <p className="text-gray-600">No bookings yet</p>
-                      <button
-                        onClick={() => setViewMode('book')}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                      >
+                      <button onClick={() => setViewMode('book')} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                         Book Your First Package
                       </button>
                     </td>
                   </tr>
-                ) : (
-                  bookingHistory.map((pkg) => {
-                    const getStatusBadge = (status) => {
-                      const badges = {
-                        'IN_TRANSIT': { color: 'bg-blue-100 text-blue-800', icon: '🚚', text: 'In Transit' },
-                        'ARRIVED': { color: 'bg-yellow-100 text-yellow-800', icon: '📍', text: 'Arrived' },
-                        'COLLECTED': { color: 'bg-green-100 text-green-800', icon: '✅', text: 'Collected' },
-                        'CANCELLED': { color: 'bg-red-100 text-red-800', icon: '❌', text: 'Cancelled' }
-                      };
-                      const badge = badges[status] || badges['IN_TRANSIT'];
-                      return (
+                ) : bookingHistory.map((pkg) => {
+                  const badges = {
+                    'IN_TRANSIT': { color: 'bg-blue-100 text-blue-800', icon: '🚚', text: 'In Transit' },
+                    'ARRIVED': { color: 'bg-yellow-100 text-yellow-800', icon: '📍', text: 'Arrived' },
+                    'COLLECTED': { color: 'bg-green-100 text-green-800', icon: '✅', text: 'Collected' },
+                    'CANCELLED': { color: 'bg-red-100 text-red-800', icon: '❌', text: 'Cancelled' }
+                  };
+                  const badge = badges[pkg.packageStatus] || badges['IN_TRANSIT'];
+                  return (
+                    <tr key={pkg.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-800">{pkg.trackingNumber}</div>
+                        <div className="text-xs text-gray-500">{pkg.packageWeight}kg</div>
+                        {pkg.isFragile && <div className="text-xs text-orange-600">⚠️ Fragile</div>}
+                      </td>
+                      <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${badge.color}`}>
-                          <span>{badge.icon}</span>
-                          {badge.text}
+                          {badge.icon} {badge.text}
                         </span>
-                      );
-                    };
-
-                    return (
-                      <tr key={pkg.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-gray-800">{pkg.trackingNumber}</div>
-                          <div className="text-xs text-gray-500">
-                            {pkg.packageWeight}kg • {pkg.packageDescription?.substring(0, 20)}...
-                          </div>
-                          {pkg.isFragile && (
-                            <div className="text-xs text-orange-600 mt-1">⚠️ Fragile</div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {getStatusBadge(pkg.packageStatus)}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-800">{pkg.senderNames}</div>
-                          <div className="text-xs text-gray-600">{pkg.senderPhone}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-800">{pkg.receiverNames}</div>
-                          <div className="text-xs text-gray-600">{pkg.receiverPhone}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-800">
-                            {pkg.origin} → {pkg.destination}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {new Date(pkg.travelDate).toLocaleDateString()}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-800">
-                            {new Date(pkg.bookingDate).toLocaleDateString()}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {new Date(pkg.bookingDate).toLocaleTimeString()}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-semibold text-gray-800">
-                            {pkg.price?.toLocaleString()} RWF
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {pkg.paymentMethod}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-800">{pkg.senderNames}</div>
+                        <div className="text-xs text-gray-600">{pkg.senderPhone}</div>
+                        {pkg.senderAddress && <div className="text-xs text-gray-500">{pkg.senderAddress}</div>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-800">{pkg.receiverNames}</div>
+                        <div className="text-xs text-gray-600">{pkg.receiverPhone}</div>
+                        {pkg.receiverAddress && <div className="text-xs text-gray-500">{pkg.receiverAddress}</div>}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-800">{pkg.origin} → {pkg.destination}</div>
+                        <div className="text-xs text-gray-600">{new Date(pkg.travelDate).toLocaleDateString()}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-gray-800">{new Date(pkg.bookingDate).toLocaleDateString()}</div>
+                        <div className="text-xs text-gray-600">{new Date(pkg.bookingDate).toLocaleTimeString()}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-gray-800">{pkg.price?.toLocaleString()} RWF</div>
+                        <div className="text-xs text-gray-600">{pkg.paymentMethod}</div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-
-          {/* Summary Footer */}
           {bookingHistory.length > 0 && (
             <div className="border-t border-gray-200 bg-gray-50 px-6 py-4">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Total Bookings:</span>
-                  <span className="ml-2 font-semibold text-gray-800">{bookingHistory.length}</span>
-                </div>
-                <div>
-                  <span className="text-gray-600">In Transit:</span>
-                  <span className="ml-2 font-semibold text-blue-600">
-                    {bookingHistory.filter(p => p.packageStatus === 'IN_TRANSIT').length}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Arrived:</span>
-                  <span className="ml-2 font-semibold text-yellow-600">
-                    {bookingHistory.filter(p => p.packageStatus === 'ARRIVED').length}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-600">Collected:</span>
-                  <span className="ml-2 font-semibold text-green-600">
-                    {bookingHistory.filter(p => p.packageStatus === 'COLLECTED').length}
-                  </span>
-                </div>
+                <div><span className="text-gray-600">Total:</span> <span className="ml-2 font-semibold">{bookingHistory.length}</span></div>
+                <div><span className="text-gray-600">In Transit:</span> <span className="ml-2 font-semibold text-blue-600">{bookingHistory.filter(p => p.packageStatus === 'IN_TRANSIT').length}</span></div>
+                <div><span className="text-gray-600">Arrived:</span> <span className="ml-2 font-semibold text-yellow-600">{bookingHistory.filter(p => p.packageStatus === 'ARRIVED').length}</span></div>
+                <div><span className="text-gray-600">Collected:</span> <span className="ml-2 font-semibold text-green-600">{bookingHistory.filter(p => p.packageStatus === 'COLLECTED').length}</span></div>
               </div>
             </div>
           )}
@@ -473,141 +439,79 @@ const PackageBookingManagement = () => {
       {/* Book New Package View */}
       {viewMode === 'book' && (
         <>
-          {/* Filter Section - Always Visible */}
+          {/* Filter */}
           <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
             <div className="flex items-center gap-2 mb-4">
               <Search className="w-5 h-5 text-blue-600" />
               <h2 className="text-lg font-bold text-gray-800">Filter Available Trips</h2>
             </div>
-            
             <form onSubmit={handleSearchTrips} className="grid grid-cols-1 md:grid-cols-7 gap-4">
               <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Origin
-                </label>
-                <select
-                  value={searchData.origin}
-                  onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Origin</label>
+                <select value={searchData.origin} onChange={(e) => setSearchData({ ...searchData, origin: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="">All Origins</option>
-                  {origins.map((origin) => (
-                    <option key={origin} value={origin}>
-                      {origin}
-                    </option>
-                  ))}
+                  {origins.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
-
               <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Destination
-                </label>
-                <select
-                  value={searchData.destination}
-                  onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Destination</label>
+                <select value={searchData.destination} onChange={(e) => setSearchData({ ...searchData, destination: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="">All Destinations</option>
-                  {destinations.map((destination) => (
-                    <option key={destination} value={destination}>
-                      {destination}
-                    </option>
-                  ))}
+                  {destinations.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
-
               <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Travel Date
-                </label>
-                <input
-                  type="date"
-                  value={searchData.travelDate}
-                  onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Travel Date</label>
+                <input type="date" value={searchData.travelDate} onChange={(e) => setSearchData({ ...searchData, travelDate: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
-
               <div className="md:col-span-1 flex flex-col gap-2 items-end justify-end">
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                >
-                  <Search className="w-5 h-5" />
-                  Filter
+                <button type="submit" disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  <Search className="w-5 h-5" /> Filter
                 </button>
-                <button
-                  type="button"
-                  onClick={handleClearFilter}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                  Clear
+                <button type="button" onClick={handleClearFilter}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                  <X className="w-4 h-4" /> Clear
                 </button>
               </div>
             </form>
           </div>
 
-          {/* Available Trips - Always Visible */}
+          {/* Available Trips */}
           <div className="bg-white rounded-lg shadow-md border border-gray-200">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-800">Available Trips ({availableTrips.length})</h2>
               <p className="text-sm text-gray-600 mt-1">Select a trip to book your package</p>
             </div>
-            
             <div className="p-6">
               {loading ? (
                 <div className="text-center py-12">
                   <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                  <p className="mt-4 text-gray-600">Loading trips...</p>
                 </div>
               ) : availableTrips.length === 0 ? (
                 <div className="text-center py-12">
                   <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No trips available</p>
-                  <p className="text-gray-400 text-sm mt-2">Try adjusting your filters or check back later</p>
+                  <p className="text-gray-500">No trips available</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {availableTrips.map((trip) => (
-                    <div
-                      key={trip.dailyTripId}
-                      className="border-2 border-gray-300 rounded-lg p-4 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
-                      onClick={() => handleSelectTrip(trip)}
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-5 h-5 text-blue-600" />
-                          <span className="font-bold text-gray-800">
-                            {trip.origin} → {trip.destination}
-                          </span>
-                        </div>
+                    <div key={trip.dailyTripId} onClick={() => handleSelectTrip(trip)}
+                      className="border-2 border-gray-300 rounded-lg p-4 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer">
+                      <div className="flex items-center gap-2 mb-3">
+                        <MapPin className="w-5 h-5 text-blue-600" />
+                        <span className="font-bold text-gray-800">{trip.origin} → {trip.destination}</span>
                       </div>
                       <div className="space-y-2 text-sm text-gray-600 mb-4">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="w-4 h-4" />
-                          <span>{formatDate(trip.tripDate)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
-                          <span>{trip.departureTime}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4" />
-                          <span className="font-bold text-blue-600">RWF {trip.price}</span>
-                        </div>
-                        <div className="text-xs">
-                          {trip.availableSeats}/{trip.totalSeats} seats available
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Vehicle: {trip.vehiclePlateNo}
-                        </div>
+                        <div className="flex items-center gap-2"><Calendar className="w-4 h-4" /><span>{formatDate(trip.tripDate)}</span></div>
+                        <div className="flex items-center gap-2"><Clock className="w-4 h-4" /><span>{trip.departureTime}</span></div>
+                        <div className="flex items-center gap-2"><DollarSign className="w-4 h-4" /><span className="font-bold text-blue-600">RWF {trip.price}</span></div>
+                        <div className="text-xs">{trip.availableSeats}/{trip.totalSeats} seats available</div>
                       </div>
-                      <button
-                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
+                      <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                         Select Trip
                       </button>
                     </div>
@@ -619,310 +523,279 @@ const PackageBookingManagement = () => {
         </>
       )}
 
-      {/* Booking Form Modal */}
+      {/* ── Compact Booking Modal (DriversManagement style) ── */}
       {showBookingForm && selectedTrip && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-              <h2 className="text-2xl font-bold text-gray-800">Book Package for Delivery</h2>
-              <button
-                onClick={resetForm}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6" />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+
+            {/* Sticky Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between rounded-t-lg">
+              <h2 className="text-lg font-bold text-gray-800">Book Package for Delivery</h2>
+              <button onClick={resetForm} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleBookPackage} className="p-6 space-y-6">
-              {/* Selected Trip Display */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Selected Trip</h3>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-bold text-gray-800">
-                      {selectedTrip.origin} → {selectedTrip.destination}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {formatDate(selectedTrip.tripDate)} at {selectedTrip.departureTime}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedTrip(null);
-                      setShowBookingForm(false);
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Change Trip
-                  </button>
+            <form onSubmit={handleBookPackage} className="p-5 space-y-5">
+
+              {/* Selected Trip */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-0.5">Selected Trip</p>
+                  <p className="font-semibold text-gray-800 text-sm">{selectedTrip.origin} → {selectedTrip.destination}</p>
+                  <p className="text-xs text-gray-600">{formatDate(selectedTrip.tripDate)} at {selectedTrip.departureTime}</p>
                 </div>
+                <button type="button" onClick={() => { setSelectedTrip(null); setShowBookingForm(false); }}
+                  className="text-xs text-blue-600 hover:text-blue-800 underline">Change</button>
               </div>
 
-              {/* Sender Information */}
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <Send className="w-5 h-5 text-blue-600" />
-                  Sender Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={packageData.senderNames}
-                      onChange={(e) => setPackageData({ ...packageData, senderNames: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
+              {/* ── Sender Information ── */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3 flex items-center gap-1">
+                  <Send className="w-3.5 h-3.5" /> Sender Information
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Full Name *</label>
+                    <input type="text" value={packageData.senderNames}
+                      onChange={handleNamesChange('senderNames')}
+                      className={inputClass('senderNames')} placeholder="John Doe" maxLength={70} />
+                    <FieldError field="senderNames" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      value={packageData.senderPhone}
-                      onChange={(e) => setPackageData({ ...packageData, senderPhone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="0788123456"
-                      required
-                    />
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number *</label>
+                    <div className="relative">
+                      <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input type="tel" value={packageData.senderPhone}
+                        onChange={handlePhoneChange('senderPhone')}
+                        className={inputWithIconClass('senderPhone')} placeholder="07XXXXXXXX" maxLength={10} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <FieldError field="senderPhone" />
+                      <span className={`text-xs ml-auto ${packageData.senderPhone.length === 10 ? 'text-green-500' : 'text-gray-400'}`}>
+                        {packageData.senderPhone.length}/10
+                      </span>
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Email (Optional)
-                    </label>
-                    <input
-                      type="email"
-                      value={packageData.senderEmail}
-                      onChange={(e) => setPackageData({ ...packageData, senderEmail: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Email (Optional)</label>
+                    <input type="email" value={packageData.senderEmail}
+                      onChange={(e) => handleChange('senderEmail', e.target.value)}
+                      className={inputClass('senderEmail')} placeholder="sender@email.com" />
+                    <FieldError field="senderEmail" />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      ID Number (Optional)
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">ID Number (Optional)</label>
+                    <input type="text" value={packageData.senderIdNumber}
+                      onChange={(e) => setPackageData({ ...packageData, senderIdNumber: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                      className={inputClass('senderIdNumber')} placeholder="16-digit ID" maxLength={16} />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Address (Optional)</span>
                     </label>
-                    <input
-                      type="text"
-                      value={packageData.senderIdNumber}
-                      onChange={(e) => setPackageData({ ...packageData, senderIdNumber: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="relative">
+                      <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                      <textarea value={packageData.senderAddress}
+                        onChange={(e) => handleChange('senderAddress', e.target.value.slice(0, 100))}
+                        className={`w-full pl-9 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none ${formErrors.senderAddress ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                        placeholder="Sender's address" rows="2" maxLength={100} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <FieldError field="senderAddress" />
+                      <span className={`text-xs ml-auto ${packageData.senderAddress.length >= 100 ? 'text-red-500' : 'text-gray-400'}`}>
+                        {packageData.senderAddress.length}/100
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Receiver Information */}
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <User className="w-5 h-5 text-green-600" />
-                  Receiver Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={packageData.receiverNames}
-                      onChange={(e) => setPackageData({ ...packageData, receiverNames: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
+              {/* ── Receiver Information ── */}
+              <div className="border-t pt-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5" /> Receiver Information
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Full Name *</label>
+                    <input type="text" value={packageData.receiverNames}
+                      onChange={handleNamesChange('receiverNames')}
+                      className={inputClass('receiverNames')} placeholder="Jane Doe" maxLength={70} />
+                    <FieldError field="receiverNames" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Phone Number *
-                    </label>
-                    <input
-                      type="tel"
-                      value={packageData.receiverPhone}
-                      onChange={(e) => setPackageData({ ...packageData, receiverPhone: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="0788654321"
-                      required
-                    />
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Phone Number *</label>
+                    <div className="relative">
+                      <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input type="tel" value={packageData.receiverPhone}
+                        onChange={handlePhoneChange('receiverPhone')}
+                        className={inputWithIconClass('receiverPhone')} placeholder="07XXXXXXXX" maxLength={10} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <FieldError field="receiverPhone" />
+                      <span className={`text-xs ml-auto ${packageData.receiverPhone.length === 10 ? 'text-green-500' : 'text-gray-400'}`}>
+                        {packageData.receiverPhone.length}/10
+                      </span>
+                    </div>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Email (Optional)
-                    </label>
-                    <input
-                      type="email"
-                      value={packageData.receiverEmail}
-                      onChange={(e) => setPackageData({ ...packageData, receiverEmail: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Email (Optional)</label>
+                    <input type="email" value={packageData.receiverEmail}
+                      onChange={(e) => handleChange('receiverEmail', e.target.value)}
+                      className={inputClass('receiverEmail')} placeholder="receiver@email.com" />
+                    <FieldError field="receiverEmail" />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                      National ID * <AlertCircle className="w-4 h-4 text-yellow-600" title="Required for collection" />
+                    <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                      National ID * <AlertCircle className="w-3 h-3 text-yellow-600" />
                     </label>
-                    <input
-                      type="text"
-                      value={packageData.receiverIdNumber}
-                      onChange={(e) => setPackageData({ ...packageData, receiverIdNumber: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="1234567890123456"
-                      required
-                    />
+                    <div className="relative">
+                      <CreditCard className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input type="text" value={packageData.receiverIdNumber}
+                        onChange={handleIdChange}
+                        className={inputWithIconClass('receiverIdNumber')} placeholder="1234567890123456" maxLength={16} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <FieldError field="receiverIdNumber" />
+                      <span className={`text-xs ml-auto ${packageData.receiverIdNumber.length === 16 ? 'text-green-500' : 'text-gray-400'}`}>
+                        {packageData.receiverIdNumber.length}/16
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                      <span className="flex items-center gap-1"><Home className="w-3 h-3" /> Address (Optional)</span>
+                    </label>
+                    <div className="relative">
+                      <MapPin className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+                      <textarea value={packageData.receiverAddress}
+                        onChange={(e) => handleChange('receiverAddress', e.target.value.slice(0, 100))}
+                        className={`w-full pl-9 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none ${formErrors.receiverAddress ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                        placeholder="Receiver's address" rows="2" maxLength={100} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <FieldError field="receiverAddress" />
+                      <span className={`text-xs ml-auto ${packageData.receiverAddress.length >= 100 ? 'text-red-500' : 'text-gray-400'}`}>
+                        {packageData.receiverAddress.length}/100
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+
+                <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-xs text-yellow-800">
                   ⚠️ Receiver must present this National ID to collect the package
                 </div>
               </div>
 
-              {/* Package Details */}
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <PackageIcon className="w-5 h-5 text-purple-600" />
-                  Package Details
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Package Description
-                    </label>
-                    <textarea
-                      value={packageData.packageDescription}
+              {/* ── Package Details ── */}
+              <div className="border-t pt-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3 flex items-center gap-1">
+                  <PackageIcon className="w-3.5 h-3.5" /> Package Details
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+
+                  <div className="col-span-2">
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Description</label>
+                    <textarea value={packageData.packageDescription}
                       onChange={(e) => setPackageData({ ...packageData, packageDescription: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="e.g., Electronics, Documents, Clothing..."
-                      rows="2"
-                    />
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                      placeholder="e.g., Electronics, Documents, Clothing..." rows="2" />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Weight (kg) *
-                    </label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Weight (kg) *</label>
                     <div className="relative">
-                      <Weight className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={packageData.packageWeight}
-                        onChange={(e) => setPackageData({ ...packageData, packageWeight: e.target.value })}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="2.5"
-                        required
-                      />
+                      <Weight className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input type="number" step="0.1" value={packageData.packageWeight}
+                        onChange={(e) => handleChange('packageWeight', e.target.value)}
+                        className={inputWithIconClass('packageWeight')} placeholder="2.5" />
                     </div>
+                    <FieldError field="packageWeight" />
                   </div>
+
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Declared Value (RWF)
-                    </label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">Declared Value (RWF)</label>
                     <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        type="number"
-                        value={packageData.packageValue}
+                      <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                      <input type="number" value={packageData.packageValue}
                         onChange={(e) => setPackageData({ ...packageData, packageValue: e.target.value })}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                        placeholder="50000"
-                      />
+                        className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                        placeholder="50000" />
                     </div>
                   </div>
-                  <div className="md:col-span-2">
+
+                  <div className="col-span-2">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={packageData.isFragile}
+                      <input type="checkbox" checked={packageData.isFragile}
                         onChange={(e) => setPackageData({ ...packageData, isFragile: e.target.checked })}
-                        className="w-5 h-5 text-blue-600 border-gray-300 rounded"
-                      />
-                      <span className="text-sm font-semibold text-gray-700">
-                        Fragile Package (Handle with care)
-                      </span>
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded" />
+                      <span className="text-xs font-semibold text-gray-700">⚠️ Fragile Package — Handle with care</span>
                     </label>
                   </div>
                 </div>
               </div>
 
-              {/* Payment Method */}
-              <div className="border-t pt-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Payment Method *
-                </label>
-                <div className="grid grid-cols-3 gap-3">
+              {/* ── Payment Method ── */}
+              <div className="border-t pt-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-blue-600 mb-3">Payment Method *</p>
+                <div className="grid grid-cols-3 gap-2">
                   {Object.entries(PAYMENT_METHODS).map(([key, value]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setPackageData({ ...packageData, paymentMethod: value })}
-                      className={`p-3 rounded-lg border-2 transition-colors ${
+                    <button key={key} type="button"
+                      onClick={() => handleChange('paymentMethod', value)}
+                      className={`p-2.5 rounded-lg border-2 transition-colors text-sm ${
                         packageData.paymentMethod === value
-                          ? 'border-blue-600 bg-blue-50 text-blue-700'
+                          ? 'border-blue-600 bg-blue-50 text-blue-700 font-semibold'
                           : 'border-gray-300 bg-white text-gray-700 hover:border-blue-300'
-                      }`}
-                    >
-                      <CreditCard className="w-5 h-5 mx-auto mb-1" />
-                      <div className="text-xs font-medium">{value.replace('_', ' ')}</div>
+                      }`}>
+                      <CreditCard className="w-4 h-4 mx-auto mb-1" />
+                      {value.replace('_', ' ')}
                     </button>
                   ))}
                 </div>
+                <FieldError field="paymentMethod" />
               </div>
 
               {/* Price Estimate */}
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700 font-medium">Estimated Price:</span>
-                  <span className="text-2xl font-bold text-green-600">
-                    RWF {calculateEstimatedPrice()}
-                  </span>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-gray-700">Estimated Price</p>
+                  <p className="text-xs text-gray-500">Min charge: RWF 2,000</p>
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
-                  Final price based on weight and route. Minimum charge: RWF 2,000
-                </p>
+                <span className="text-2xl font-bold text-green-600">RWF {calculateEstimatedPrice()}</span>
               </div>
 
-              {/* Submit Buttons */}
-              <div className="flex items-center gap-3 pt-4 border-t">
-                <button
-                  type="submit"
-                  disabled={bookingLoading}
-                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-2 border-t">
+                <button type="submit" disabled={bookingLoading}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm font-medium">
                   {bookingLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Booking...
-                    </>
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Booking...</>
                   ) : (
-                    <>
-                      <CheckCircle className="w-5 h-5" />
-                      Book Package
-                    </>
+                    <><CheckCircle className="w-4 h-4" /> Book Package</>
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedTrip(null);
-                    setShowBookingForm(false);
-                  }}
-                  disabled={bookingLoading}
-                  className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
+                <button type="button" onClick={resetForm} disabled={bookingLoading}
+                  className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-sm font-medium disabled:opacity-50">
                   Cancel
                 </button>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-2">📱 Automatic Notifications:</p>
-                <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li>Sender receives SMS & Email confirmation</li>
-                  <li>Receiver receives SMS & Email about incoming package</li>
-                  <li>Receiver notified when package arrives at destination</li>
-                  <li>Sender notified when package is collected</li>
-                </ul>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                <p className="font-semibold mb-1">📱 Automatic Notifications:</p>
+                <p>Sender & receiver notified via Email on booking, arrival, and collection.</p>
               </div>
+
             </form>
           </div>
         </div>

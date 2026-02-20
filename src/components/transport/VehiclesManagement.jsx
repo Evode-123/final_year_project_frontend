@@ -18,6 +18,44 @@ const VehiclesManagement = () => {
     status: VEHICLE_STATUS.AVAILABLE
   });
 
+  const [formErrors, setFormErrors] = useState({
+    plateNo: '',
+    capacity: ''
+  });
+
+  // Plate format: 3 letters, space, 3 digits, space, 1 letter — e.g. RAD 123 A
+  const PLATE_REGEX = /^[A-Z]{3} \d{3} [A-Z]$/;
+
+  const validatePlateNo = (value) => {
+    if (!value) return 'Plate number is required.';
+    if (!PLATE_REGEX.test(value)) return 'Format must be: RAD 123 A (3 letters, space, 3 digits, space, 1 letter)';
+    return '';
+  };
+
+  const validateCapacity = (value) => {
+    if (!value) return 'Capacity is required.';
+    if (!/^\d+$/.test(value)) return 'Only numbers are allowed.';
+    if (parseInt(value) < 1) return 'Capacity must be at least 1.';
+    if (value.length > 3) return 'Capacity cannot exceed 3 digits (max 999).';
+    return '';
+  };
+
+  const handlePlateNoChange = (e) => {
+    const raw = e.target.value.toUpperCase();
+    setFormData({ ...formData, plateNo: raw });
+    setFormErrors({ ...formErrors, plateNo: validatePlateNo(raw) });
+  };
+
+  const handleCapacityChange = (e) => {
+    const raw = e.target.value;
+    // Block non-numeric characters
+    if (raw && !/^\d*$/.test(raw)) return;
+    // Block more than 3 digits
+    if (raw.length > 3) return;
+    setFormData({ ...formData, capacity: raw });
+    setFormErrors({ ...formErrors, capacity: raw ? validateCapacity(raw) : '' });
+  };
+
   useEffect(() => {
     loadVehicles();
   }, []);
@@ -38,6 +76,14 @@ const VehiclesManagement = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    // Run all validations before submitting
+    const plateError = validatePlateNo(formData.plateNo);
+    const capacityError = validateCapacity(formData.capacity);
+    if (plateError || capacityError) {
+      setFormErrors({ plateNo: plateError, capacity: capacityError });
+      return;
+    }
 
     try {
       const vehicleData = {
@@ -94,6 +140,7 @@ const VehiclesManagement = () => {
       vehicleType: '',
       status: VEHICLE_STATUS.AVAILABLE
     });
+    setFormErrors({ plateNo: '', capacity: '' });
     setEditingVehicle(null);
   };
 
@@ -147,9 +194,9 @@ const VehiclesManagement = () => {
       {/* Modal Overlay and Form */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-800">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">
                 {editingVehicle ? 'Edit Vehicle' : 'Add New Vehicle'}
               </h2>
               <button
@@ -159,86 +206,100 @@ const VehiclesManagement = () => {
                 }}
                 className="text-gray-500 hover:text-gray-700 transition-colors"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Plate Number *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.plateNo}
-                    onChange={(e) => setFormData({ ...formData, plateNo: e.target.value.toUpperCase() })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="RAD 123 A"
-                    required
-                  />
-                </div>
+            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Plate Number *
+                </label>
+                <input
+                  type="text"
+                  value={formData.plateNo}
+                  onChange={handlePlateNoChange}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    formErrors.plateNo ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  }`}
+                  placeholder="RAD 123 A"
+                  maxLength={9}
+                />
+                {formErrors.plateNo && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    {formErrors.plateNo}
+                  </p>
+                )}
+              </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Capacity (Seats) *
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.capacity}
-                    onChange={(e) => setFormData({ ...formData, capacity: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="45"
-                    required
-                    min="1"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Capacity (Seats) *
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={formData.capacity}
+                  onChange={handleCapacityChange}
+                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    formErrors.capacity ? 'border-red-400 bg-red-50' : 'border-gray-300'
+                  }`}
+                  placeholder="e.g. 45"
+                  maxLength={3}
+                />
+                {formErrors.capacity && (
+                  <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                    {formErrors.capacity}
+                  </p>
+                )}
+              </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Vehicle Type *
-                  </label>
-                  <select
-                    value={formData.vehicleType}
-                    onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select Type</option>
-                    {VEHICLE_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Vehicle Type *
+                </label>
+                <select
+                  value={formData.vehicleType}
+                  onChange={(e) => setFormData({ ...formData, vehicleType: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Type</option>
+                  {VEHICLE_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Status *
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    {Object.values(VEHICLE_STATUS).map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Status *
+                </label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  {Object.values(VEHICLE_STATUS).map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  <Save className="w-5 h-5" />
-                  {editingVehicle ? 'Update Vehicle' : 'Add Vehicle'}
+                  <Save className="w-4 h-4" />
+                  {editingVehicle ? 'Update' : 'Add Vehicle'}
                 </button>
                 <button
                   type="button"
@@ -246,7 +307,7 @@ const VehiclesManagement = () => {
                     setShowForm(false);
                     resetForm();
                   }}
-                  className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
                 >
                   Cancel
                 </button>
