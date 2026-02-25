@@ -1,62 +1,170 @@
 import React, { useState, useEffect } from 'react';
 import {
-  FileText,
-  Download,
-  Calendar,
-  TrendingUp,
-  DollarSign,
-  Car,
-  Package,
-  Users,
-  AlertTriangle,
-  CheckCircle,
-  Clock,
-  MapPin,
-  Filter,
-  X,
-  Loader,
-  BarChart3,
-  PieChart,
-  Activity
+  Download, Calendar, X, Loader,
+  Ticket, Users, MapPin
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import transportApiService from '../../services/transportApiService';
-import feedbackApiService from '../../services/feedbackApiService';
-import incidentApiService from '../../services/incidentApiService';
 import packageApiService from '../../services/packageApiService';
+
+const TABS = [
+  { id: 'ticket',      label: 'Ticket Report',      icon: Ticket  },
+  { id: 'driver',      label: 'Driver Report',       icon: Users   },
+  { id: 'destination', label: 'Destination Report',  icon: MapPin  },
+];
 
 const AdminReports = () => {
   const { token } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [selectedReport, setSelectedReport] = useState('overview');
-  const [dateRange, setDateRange] = useState({
+  const [activeTab, setActiveTab]     = useState('ticket');
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState('');
+  const [allData, setAllData]         = useState(null);
+  const [pdfLoading, setPdfLoading]   = useState({ ticket: false, driver: false, destination: false });
+  const [dateRange, setDateRange]     = useState({
     startDate: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
+    endDate:   new Date().toISOString().split('T')[0],
   });
 
-  const [overviewData, setOverviewData] = useState(null);
-  const [financialData, setFinancialData] = useState(null);
-  const [operationalData, setOperationalData] = useState(null);
-  const [safetyData, setSafetyData] = useState(null);
-  const [customerData, setCustomerData] = useState(null);
+  useEffect(() => { loadAllData(); }, [dateRange]);
 
-  useEffect(() => {
-    loadReportData();
-  }, [selectedReport, dateRange]);
+  // ─── Helper: clean route string ─────────────────────────────────────────────
+  // cleanRoute() is used for the UI display (shows nice arrow)
+  // cleanRoutePDF() is used inside jsPDF tables — Unicode → causes letter-spacing
+  // bugs in some jsPDF builds, so we use the ASCII sequence " > " instead.
+  const cleanRoute = (origin, destination) => {
+    const c = (s) => {
+      if (!s) return '';
+      return s
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b(\w)\s(?=\w\b)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+    return c(origin) + ' \u2192 ' + c(destination);
+  };
 
-  const loadReportData = async () => {
+  const cleanRoutePDF = (origin, destination) => {
+    // Some DB values come with spaced-out chars like "K i g a l i"
+    // Step 1: collapse all whitespace down to single spaces
+    // Step 2: remove spaces between single letters (e.g. "K i g" -> "Kig")
+    const c = (s) => {
+      if (!s) return '';
+      return s
+        .replace(/\s+/g, ' ')               // collapse multiple spaces
+        .trim()
+        .replace(/\b(\w)\s(?=\w\b)/g, '$1') // "K i g a l i" -> "Kigali"
+        .replace(/\s+/g, ' ')               // final cleanup
+        .trim();
+    };
+    return c(origin) + '  -->  ' + c(destination);
+  };
+
+  // ─── LOAD ALL DATA ───────────────────────────────────────────────────────────
+  const loadAllData = async () => {
     setLoading(true);
     setError('');
     try {
-      switch (selectedReport) {
-        case 'overview':    await loadOverviewData();    break;
-        case 'financial':   await loadFinancialData();   break;
-        case 'operational': await loadOperationalData(); break;
-        case 'safety':      await loadSafetyData();      break;
-        case 'customer':    await loadCustomerData();    break;
-        default:            await loadOverviewData();
-      }
+      const [bookings, vehicles, drivers, routes] = await Promise.all([
+        transportApiService.getAllBookingsHistory(),
+        transportApiService.getAllVehicles(),
+        transportApiService.getAllDrivers(),
+        transportApiService.getAllRoutes(),
+      ]);
+
+      const inRange = (d) => {
+        const dt = new Date(d);
+        return dt >= new Date(dateRange.startDate) && dt <= new Date(dateRange.endDate);
+      };
+
+      const filteredBookings = bookings.filter(b => inRange(b.bookingDate));
+
+      // ── Driver trip counts (within range) ──
+      const vehicleDriverMap = {};
+      drivers.forEach(d => {
+        if (d.assignedVehiclePlateNo) vehicleDriverMap[d.assignedVehiclePlateNo] = d;
+      });
+
+      const driverTripCount = {};
+      filteredBookings.forEach(b => {
+        const plate = b.dailyTrip?.vehicle?.plateNo;
+        if (plate && vehicleDriverMap[plate]) {
+          const id = vehicleDriverMap[plate].id;
+          driverTripCount[id] = (driverTripCount[id] || 0) + 1;
+        }
+      });
+
+      // ── Route stats (within range) ──
+      const routeStats = {};
+      filteredBookings.forEach(b => {
+        if (b.dailyTrip?.route) {
+          const key = b.dailyTrip.route.id;
+          if (!routeStats[key]) routeStats[key] = { vehicle: null, trips: 0 };
+          routeStats[key].trips += 1;
+          if (b.dailyTrip.vehicle && !routeStats[key].vehicle)
+            routeStats[key].vehicle = b.dailyTrip.vehicle;
+        }
+      });
+
+      // ── Ticket rows ──
+      const ticketRows = filteredBookings
+        .filter(b => b.bookingStatus === 'CONFIRMED')
+        .map((b, i) => ({
+          idx:           i + 1,
+          route:         b.dailyTrip?.route
+                           ? cleanRoute(b.dailyTrip.route.origin, b.dailyTrip.route.destination)
+                           : '-',
+          routePDF:      b.dailyTrip?.route
+                           ? cleanRoutePDF(b.dailyTrip.route.origin, b.dailyTrip.route.destination)
+                           : '-',
+          passengerName: b.customer?.names ?? '-',
+          phoneNumber:   b.customer?.phoneNumber ?? '-',
+          travelDate:    b.dailyTrip?.tripDate
+                           ? new Date(b.dailyTrip.tripDate).toLocaleDateString()
+                           : '-',
+          vehicle:       b.dailyTrip?.vehicle?.plateNo ?? '-',
+          seatNumber:    b.seatNumber ?? '-',
+          price:         b.price != null
+                           ? Number(b.price).toLocaleString()
+                           : '-',
+          paymentMethod: b.paymentMethod ?? '-',
+        }));
+
+      // ── Driver rows ──
+      const driverRows = drivers.map((d, i) => ({
+        idx:               i + 1,
+        driverName:        d.names ?? '-',
+        phoneNumber:       d.phoneNumber ?? '-',
+        address:           d.address ?? '-',
+        hiredDate:         d.hiredDate
+                             ? new Date(d.hiredDate).toLocaleDateString()
+                             : '-',
+        vehicleAssignment: d.assignedVehiclePlateNo ?? 'Unassigned',
+        driverStatus:      d.status ?? '-',
+        trips:             driverTripCount[d.id] ?? 0,
+      }));
+
+      // ── Destination rows ──
+      const destinationRows = routes.map((r, i) => {
+        const stat = routeStats[r.id];
+        return {
+          idx:         i + 1,
+          destination: cleanRoute(r.origin, r.destination),
+          destPDF:     cleanRoutePDF(r.origin, r.destination),
+          price:       r.price != null
+                         ? `${Number(r.price).toLocaleString()} RWF`
+                         : '-',
+          duration:    r.durationMinutes != null
+                         ? `${Math.floor(r.durationMinutes / 60)}h ${r.durationMinutes % 60}min`
+                         : '-',
+          vehicle:     stat?.vehicle?.plateNo ?? '-',
+          seats:       stat?.vehicle?.capacity ?? r.totalSeats ?? '-',
+          trips:       stat?.trips ?? 0,
+          status:      r.status ?? 'ACTIVE',
+        };
+      });
+
+      setAllData({ ticketRows, driverRows, destinationRows });
     } catch (err) {
       setError('Failed to load report data: ' + err.message);
     } finally {
@@ -64,1300 +172,503 @@ const AdminReports = () => {
     }
   };
 
-  const loadOverviewData = async () => {
-    try {
-      const [bookings, vehicles, drivers, routes, packages, feedback, incidents] = await Promise.all([
-        transportApiService.getAllBookingsHistory(),
-        transportApiService.getAllVehicles(),
-        transportApiService.getAllDrivers(),
-        transportApiService.getAllRoutes(),
-        packageApiService.getAllPackages(),
-        feedbackApiService.getAllFeedback(),
-        incidentApiService.getAllIncidents()
-      ]);
+  // ─── LOGO ────────────────────────────────────────────────────────────────────
+  const loadLogoAsBase64 = () => new Promise((resolve) => {
+    fetch(`/Logo.avif?cb=${Date.now()}`)
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth || 200;
+            c.height = img.naturalHeight || 200;
+            c.getContext('2d').drawImage(img, 0, 0);
+            resolve(c.toDataURL('image/png'));
+          } catch { resolve(null); }
+          URL.revokeObjectURL(url);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      })
+      .catch(() => resolve(null));
+  });
 
-      const totalRevenue = bookings
-        .filter(b => b.paymentStatus === 'PAID')
-        .reduce((sum, b) => sum + parseFloat(b.price || 0), 0);
+  // ─── PDF HEADER ──────────────────────────────────────────────────────────────
+  const buildHeader = async (doc, title) => {
+    const pw     = doc.internal.pageSize.width;
+    const margin = 14;
+    const cx     = pw / 2;
+    let   y      = 8;
 
-      const activeVehicles = vehicles.filter(v => v.status === 'AVAILABLE').length;
-      const activeDrivers = drivers.filter(d => d.status === 'ACTIVE').length;
-      const confirmedBookings = bookings.filter(b => b.bookingStatus === 'CONFIRMED').length;
-      const cancelledBookings = bookings.filter(b => b.bookingStatus === 'CANCELLED').length;
-      const cancellationRate = bookings.length > 0
-        ? ((cancelledBookings / bookings.length) * 100).toFixed(1) : 0;
-      const deliveredPackages = packages.filter(p => p.packageStatus === 'COLLECTED').length;
-      const inTransitPackages = packages.filter(p => p.packageStatus === 'IN_TRANSIT').length;
-      const avgRating = feedback.length > 0
-        ? (feedback.reduce((sum, f) => sum + f.rating, 0) / feedback.length).toFixed(1) : 0;
-      const criticalIncidents = incidents.filter(i => i.severity === 'CRITICAL').length;
-      const resolvedIncidents = incidents.filter(i => i.status === 'RESOLVED').length;
+    const logo = await loadLogoAsBase64();
+    if (logo) {
+      doc.addImage(logo, 'PNG', cx - 9, y, 18, 18);
+      y += 21;
+    }
 
-      setOverviewData({
-        totalRevenue, totalBookings: bookings.length, confirmedBookings, cancelledBookings,
-        cancellationRate, totalVehicles: vehicles.length, activeVehicles,
-        totalDrivers: drivers.length, activeDrivers, totalRoutes: routes.length,
-        totalPackages: packages.length, deliveredPackages, inTransitPackages,
-        avgRating, totalFeedback: feedback.length, totalIncidents: incidents.length,
-        criticalIncidents, resolvedIncidents
-      });
-    } catch (error) { throw error; }
+    doc.setFontSize(18); doc.setFont(undefined, 'bold'); doc.setTextColor(37, 99, 235);
+    doc.text('Brothers Express', cx, y, { align: 'center' }); y += 7;
+
+    doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(100, 100, 100);
+    doc.text('Kigali, Rwanda  |  +250 788 000 000  |  info@tdms.gov.rw', cx, y, { align: 'center' }); y += 7;
+
+    doc.setFontSize(14); doc.setFont(undefined, 'bold'); doc.setTextColor(20, 20, 20);
+    doc.text(title, cx, y, { align: 'center' }); y += 6;
+
+    doc.setFontSize(8.5); doc.setFont(undefined, 'normal'); doc.setTextColor(90, 90, 90);
+    doc.text(
+      `Period: ${dateRange.startDate}  \u2013  ${dateRange.endDate}     |     Generated: ${new Date().toLocaleString()}`,
+      cx, y, { align: 'center' }
+    ); y += 5;
+
+    doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.6);
+    doc.line(margin, y, pw - margin, y); y += 8;
+
+    return y;
   };
 
-  const loadFinancialData = async () => {
-    try {
-      const bookings = await transportApiService.getAllBookingsHistory();
-      const packages = await packageApiService.getAllPackages();
+  // ─── PDF SIGNATURE ───────────────────────────────────────────────────────────
+  const buildSignature = (doc, y) => {
+    const pw     = doc.internal.pageSize.width;
+    const ph     = doc.internal.pageSize.height;
+    const margin = 14;
+    if (y + 50 > ph - 20) { doc.addPage(); y = 20; }
+    const bw = (pw - 3 * margin) / 2;
 
-      const filteredBookings = bookings.filter(b => {
-        const bookingDate = new Date(b.bookingDate);
-        return bookingDate >= new Date(dateRange.startDate) &&
-               bookingDate <= new Date(dateRange.endDate);
-      });
-      const filteredPackages = packages.filter(p => {
-        const bookingDate = new Date(p.bookingDate);
-        return bookingDate >= new Date(dateRange.startDate) &&
-               bookingDate <= new Date(dateRange.endDate);
-      });
-
-      const bookingRevenue = filteredBookings
-        .filter(b => b.paymentStatus === 'PAID')
-        .reduce((sum, b) => sum + parseFloat(b.price || 0), 0);
-      const packageRevenue = filteredPackages
-        .filter(p => p.paymentStatus === 'PAID')
-        .reduce((sum, p) => sum + parseFloat(p.price || 0), 0);
-      const totalRevenue = bookingRevenue + packageRevenue;
-
-      const paymentMethods = {};
-      [...filteredBookings, ...filteredPackages].forEach(item => {
-        if (item.paymentStatus === 'PAID') {
-          paymentMethods[item.paymentMethod] =
-            (paymentMethods[item.paymentMethod] || 0) + parseFloat(item.price || 0);
-        }
-      });
-
-      const revenueByRoute = {};
-      filteredBookings.forEach(b => {
-        if (b.paymentStatus === 'PAID' && b.dailyTrip?.route) {
-          const routeKey = `${b.dailyTrip.route.origin} - ${b.dailyTrip.route.destination}`;
-          revenueByRoute[routeKey] = (revenueByRoute[routeKey] || 0) + parseFloat(b.price || 0);
-        }
-      });
-
-      const dailyRevenue = {};
-      [...filteredBookings, ...filteredPackages].forEach(item => {
-        if (item.paymentStatus === 'PAID') {
-          const date = new Date(item.bookingDate).toLocaleDateString();
-          dailyRevenue[date] = (dailyRevenue[date] || 0) + parseFloat(item.price || 0);
-        }
-      });
-
-      setFinancialData({
-        totalRevenue, bookingRevenue, packageRevenue,
-        totalTransactions: filteredBookings.length + filteredPackages.length,
-        paymentMethods, revenueByRoute, dailyRevenue
-      });
-    } catch (error) { throw error; }
+    const drawBox = (x, label, role) => {
+      doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.4);
+      doc.roundedRect(x, y, bw, 38, 3, 3);
+      doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.setTextColor(37, 99, 235);
+      doc.text(label, x + bw / 2, y + 10, { align: 'center' });
+      doc.setDrawColor(37, 99, 235); doc.setLineWidth(0.5);
+      doc.line(x + 12, y + 23, x + bw - 12, y + 23);
+      doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(60, 60, 60);
+      doc.text(role, x + bw / 2, y + 29, { align: 'center' });
+      doc.text('Date: __________', x + bw / 2, y + 35, { align: 'center' });
+    };
+    drawBox(margin, 'Prepared By', 'System Administrator');
+    drawBox(margin + bw + margin, 'Approved By', 'Director of Operations');
   };
 
-  const loadOperationalData = async () => {
-    try {
-      const [bookings, vehicles, drivers] = await Promise.all([
-        transportApiService.getAllBookingsHistory(),
-        transportApiService.getAllVehicles(),
-        transportApiService.getAllDrivers()
-      ]);
-
-      const filteredBookings = bookings.filter(b => {
-        const bookingDate = new Date(b.bookingDate);
-        return bookingDate >= new Date(dateRange.startDate) &&
-               bookingDate <= new Date(dateRange.endDate);
-      });
-
-      const completedTrips = filteredBookings.filter(b =>
-        b.bookingStatus === 'CONFIRMED' &&
-        new Date(b.dailyTrip?.tripDate) < new Date()
-      ).length;
-      const totalTrips = filteredBookings.length;
-      const completionRate = totalTrips > 0 ? ((completedTrips / totalTrips) * 100).toFixed(1) : 0;
-
-      const vehicleDriverMap = {};
-      drivers.forEach(d => {
-        if (d.assignedVehicleId) vehicleDriverMap[d.assignedVehicleId] = d.names;
-      });
-
-      const vehicleUtilization = {};
-      filteredBookings.forEach(b => {
-        if (b.dailyTrip?.vehicle) {
-          const plateNo = b.dailyTrip.vehicle.plateNo;
-          const vehicleId = b.dailyTrip.vehicle.id;
-          if (!vehicleUtilization[plateNo]) {
-            vehicleUtilization[plateNo] = {
-              trips: 0,
-              driverName: vehicleDriverMap[vehicleId] || 'Unassigned'
-            };
-          }
-          vehicleUtilization[plateNo].trips += 1;
-        }
-      });
-
-      const routePopularity = {};
-      filteredBookings.forEach(b => {
-        if (b.dailyTrip?.route) {
-          const routeKey = `${b.dailyTrip.route.origin} - ${b.dailyTrip.route.destination}`;
-          routePopularity[routeKey] = (routePopularity[routeKey] || 0) + 1;
-        }
-      });
-
-      const hourlyBookings = {};
-      filteredBookings.forEach(b => {
-        const hour = new Date(b.bookingDate).getHours();
-        hourlyBookings[hour] = (hourlyBookings[hour] || 0) + 1;
-      });
-
-      setOperationalData({
-        totalTrips, completedTrips, completionRate, vehicleUtilization,
-        routePopularity, hourlyBookings,
-        totalVehicles: vehicles.length,
-        activeVehicles: vehicles.filter(v => v.status === 'AVAILABLE').length,
-        totalDrivers: drivers.length,
-        activeDrivers: drivers.filter(d => d.status === 'ACTIVE').length
-      });
-    } catch (error) { throw error; }
-  };
-
-  const loadSafetyData = async () => {
-    try {
-      const [inspectionDashboard, dailyChecksDashboard, incidents] = await Promise.all([
-        transportApiService.getInspectionDashboard(),
-        transportApiService.getDailyChecksDashboard(),
-        incidentApiService.getAllIncidents()
-      ]);
-
-      const filteredIncidents = incidents.filter(i => {
-        const incidentDate = new Date(i.incidentTime);
-        return incidentDate >= new Date(dateRange.startDate) &&
-               incidentDate <= new Date(dateRange.endDate);
-      });
-
-      const incidentsBySeverity = {
-        MINOR:    filteredIncidents.filter(i => i.severity === 'MINOR').length,
-        MODERATE: filteredIncidents.filter(i => i.severity === 'MODERATE').length,
-        MAJOR:    filteredIncidents.filter(i => i.severity === 'MAJOR').length,
-        CRITICAL: filteredIncidents.filter(i => i.severity === 'CRITICAL').length
-      };
-
-      const incidentsByType = {};
-      filteredIncidents.forEach(i => {
-        incidentsByType[i.incidentType] = (incidentsByType[i.incidentType] || 0) + 1;
-      });
-
-      setSafetyData({
-        ...inspectionDashboard,
-        dailyChecks: dailyChecksDashboard,
-        totalIncidents: filteredIncidents.length,
-        incidentsBySeverity, incidentsByType,
-        resolvedIncidents: filteredIncidents.filter(i => i.status === 'RESOLVED').length,
-        pendingIncidents:  filteredIncidents.filter(i => i.status !== 'RESOLVED').length
-      });
-    } catch (error) { throw error; }
-  };
-
-  const loadCustomerData = async () => {
-    try {
-      const [bookings, feedback] = await Promise.all([
-        transportApiService.getAllBookingsHistory(),
-        feedbackApiService.getAllFeedback()
-      ]);
-
-      const filteredBookings = bookings.filter(b => {
-        const bookingDate = new Date(b.bookingDate);
-        return bookingDate >= new Date(dateRange.startDate) &&
-               bookingDate <= new Date(dateRange.endDate);
-      });
-      const filteredFeedback = feedback.filter(f => {
-        const feedbackDate = new Date(f.createdAt);
-        return feedbackDate >= new Date(dateRange.startDate) &&
-               feedbackDate <= new Date(dateRange.endDate);
-      });
-
-      const totalBookings     = filteredBookings.length;
-      const confirmedBookings = filteredBookings.filter(b => b.bookingStatus === 'CONFIRMED').length;
-      const cancelledBookings = filteredBookings.filter(b => b.bookingStatus === 'CANCELLED').length;
-      const cancellationRate  = totalBookings > 0
-        ? ((cancelledBookings / totalBookings) * 100).toFixed(1) : 0;
-      const avgRating = filteredFeedback.length > 0
-        ? (filteredFeedback.reduce((sum, f) => sum + f.rating, 0) / filteredFeedback.length).toFixed(1) : 0;
-
-      const feedbackBySentiment = {
-        POSITIVE: filteredFeedback.filter(f => f.sentiment === 'POSITIVE').length,
-        NEUTRAL:  filteredFeedback.filter(f => f.sentiment === 'NEUTRAL').length,
-        NEGATIVE: filteredFeedback.filter(f => f.sentiment === 'NEGATIVE').length
-      };
-      const feedbackByCategory = {};
-      filteredFeedback.forEach(f => {
-        feedbackByCategory[f.feedbackCategory] = (feedbackByCategory[f.feedbackCategory] || 0) + 1;
-      });
-
-      setCustomerData({
-        totalBookings, confirmedBookings, cancelledBookings, cancellationRate,
-        totalFeedback: filteredFeedback.length, avgRating, feedbackBySentiment, feedbackByCategory
-      });
-    } catch (error) { throw error; }
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ✅ NEW: Load Logo.avif from /public, convert to PNG via canvas for jsPDF
-  //    avif is not natively supported by jsPDF so we draw it through a canvas first.
-  //    Falls back gracefully to null if the file is missing or the browser
-  //    doesn't support avif — the PDF will still generate without a logo.
-  // ─────────────────────────────────────────────────────────────────────────────
-  const loadLogoAsBase64 = () => {
-    return new Promise((resolve) => {
-      fetch(`/Logo.avif?cb=${Date.now()}`)
-        .then(res => {
-          if (!res.ok) throw new Error('Logo not found');
-          return res.blob();
-        })
-        .then(blob => {
-          const blobUrl = URL.createObjectURL(blob);
-          const img = new Image();
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width  = img.naturalWidth  || 200;
-              canvas.height = img.naturalHeight || 200;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(img, 0, 0);
-              const dataUrl = canvas.toDataURL('image/png');
-              URL.revokeObjectURL(blobUrl);
-              resolve(dataUrl);
-            } catch {
-              URL.revokeObjectURL(blobUrl);
-              resolve(null);
-            }
-          };
-          img.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(null); };
-          img.src = blobUrl;
-        })
-        .catch(() => resolve(null));
-    });
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ✅ PDF GENERATION
-  // ─────────────────────────────────────────────────────────────────────────────
-  const generatePDF = async () => {
-    try {
-      const { jsPDF } = window.jspdf;
-      require('jspdf-autotable');
-
-      const doc = new jsPDF();
-
-      let yPos = 20;
-      const pageWidth  = doc.internal.pageSize.width;
-      const pageHeight = doc.internal.pageSize.height;
-      const margin = 20;
-
-      // ── Load logo before building the header ─────────────────────────────
-      const logoBase64 = await loadLogoAsBase64();
-
-      // ─────────────────────────────────────────────────────────────────────
-      // addHeader — matches the reference design:
-      //   centered logo → company name → contact → report title → period → divider
-      // ─────────────────────────────────────────────────────────────────────
-      const addHeader = () => {
-        const centerX  = pageWidth / 2;
-        const logoSize = 20;   // mm — square logo like the CICMS badge in reference
-
-        // 1. Logo — centered at the top
-        if (logoBase64) {
-          doc.addImage(
-            logoBase64,
-            'PNG',
-            centerX - logoSize / 2,   // x: centered
-            6,                        // y: 6 mm from top
-            logoSize,                 // width
-            logoSize                  // height (square)
-          );
-        }
-
-        // Vertical position after logo (or start high if no logo)
-        const afterLogo = logoBase64 ? 30 : 16;
-
-        // 2. Company name — centered, bold blue
-        doc.setFontSize(18);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Brothers Express', centerX, afterLogo, { align: 'center' });
-
-        // 3. Contact line — centered, small grey
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(110, 110, 110);
-        doc.text('Kigali, Rwanda  |  +250 788 000 000  |  info@tdms.gov.rw', centerX, afterLogo + 6, { align: 'center' });
-
-        // 4. Report title — centered, larger, dark
-        const reportTitle = selectedReport.charAt(0).toUpperCase() + selectedReport.slice(1) + ' Report';
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(30, 30, 30);
-        doc.text(reportTitle, centerX, afterLogo + 15, { align: 'center' });
-
-        // 5. Period — centered, grey
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(80, 80, 80);
-        doc.text(
-          `Period: ${dateRange.startDate}  –  ${dateRange.endDate}`,
-          centerX, afterLogo + 22, { align: 'center' }
-        );
-
-        // 6. Generated timestamp — centered, lighter
-        doc.setTextColor(140, 140, 140);
-        doc.text(
-          `Generated: ${new Date().toLocaleString()}`,
-          centerX, afterLogo + 28, { align: 'center' }
-        );
-
-        // 7. Blue divider line
-        const dividerY = afterLogo + 33;
-        doc.setDrawColor(37, 99, 235);
-        doc.setLineWidth(0.5);
-        doc.line(margin, dividerY, pageWidth - margin, dividerY);
-
-        return dividerY + 8;   // ← yPos where content begins
-      };
-
-      yPos = addHeader();
-      doc.setTextColor(0, 0, 0);
-
-      // ─── OVERVIEW ────────────────────────────────────────────────────────────
-      if (selectedReport === 'overview' && overviewData) {
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Business Overview', margin, yPos);
-        yPos += 8;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['METRIC', 'VALUE']],
-          body: [
-            ['Total Revenue', `RWF ${overviewData.totalRevenue.toLocaleString()}`],
-            ['Total Bookings', overviewData.totalBookings.toString()],
-            ['Confirmed Bookings', overviewData.confirmedBookings.toString()],
-            ['Cancelled Bookings', `${overviewData.cancelledBookings} (${overviewData.cancellationRate}%)`]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Operations Summary', margin, yPos);
-        yPos += 5;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['RESOURCE', 'TOTAL', 'ACTIVE', 'STATUS']],
-          body: [
-            ['Vehicles', overviewData.totalVehicles.toString(), overviewData.activeVehicles.toString(),
-             `${((overviewData.activeVehicles / overviewData.totalVehicles) * 100).toFixed(0)}%`],
-            ['Drivers', overviewData.totalDrivers.toString(), overviewData.activeDrivers.toString(),
-             `${((overviewData.activeDrivers / overviewData.totalDrivers) * 100).toFixed(0)}%`],
-            ['Routes', overviewData.totalRoutes.toString(), '-', '-']
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Package Delivery', margin, yPos);
-        yPos += 5;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['STATUS', 'COUNT', 'PERCENTAGE']],
-          body: [
-            ['Total Packages', overviewData.totalPackages.toString(), '100%'],
-            ['Delivered', overviewData.deliveredPackages.toString(),
-             `${((overviewData.deliveredPackages / overviewData.totalPackages) * 100).toFixed(1)}%`],
-            ['In Transit', overviewData.inTransitPackages.toString(),
-             `${((overviewData.inTransitPackages / overviewData.totalPackages) * 100).toFixed(1)}%`]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['CATEGORY', 'METRIC', 'VALUE']],
-          body: [
-            ['Customer Service', 'Total Feedback', overviewData.totalFeedback.toString()],
-            ['Customer Service', 'Average Rating', `${overviewData.avgRating}/5.0`],
-            ['Safety & Incidents', 'Total Incidents', overviewData.totalIncidents.toString()],
-            ['Safety & Incidents', 'Critical Incidents', overviewData.criticalIncidents.toString()],
-            ['Safety & Incidents', 'Resolved Incidents', overviewData.resolvedIncidents.toString()]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-      }
-
-      // ─── FINANCIAL ───────────────────────────────────────────────────────────
-      if (selectedReport === 'financial' && financialData) {
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Financial Report', margin, yPos);
-        yPos += 8;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['REVENUE TYPE', 'AMOUNT (RWF)']],
-          body: [
-            ['Total Revenue', financialData.totalRevenue.toLocaleString()],
-            ['Booking Revenue', financialData.bookingRevenue.toLocaleString()],
-            ['Package Revenue', financialData.packageRevenue.toLocaleString()],
-            ['Total Transactions', financialData.totalTransactions.toString()]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Payment Methods Breakdown', margin, yPos);
-        yPos += 5;
-
-        const paymentBody = Object.entries(financialData.paymentMethods).map(([method, amount]) => [
-          method, amount.toLocaleString()
-        ]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['PAYMENT METHOD', 'AMOUNT (RWF)']],
-          body: paymentBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Top Routes by Revenue', margin, yPos);
-        yPos += 5;
-
-        const routeBody = Object.entries(financialData.revenueByRoute)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 10)
-          .map(([route, revenue], index) => [(index + 1).toString(), route, revenue.toLocaleString()]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['#', 'ROUTE', 'REVENUE (RWF)']],
-          body: routeBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-      }
-
-      // ─── OPERATIONAL ─────────────────────────────────────────────────────────
-      if (selectedReport === 'operational' && operationalData) {
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Operations Report', margin, yPos);
-        yPos += 8;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['METRIC', 'VALUE']],
-          body: [
-            ['Total Trips', operationalData.totalTrips.toString()],
-            ['Completed Trips', operationalData.completedTrips.toString()],
-            ['Completion Rate', `${operationalData.completionRate}%`],
-            ['Total Vehicles', operationalData.totalVehicles.toString()],
-            ['Active Vehicles', operationalData.activeVehicles.toString()],
-            ['Total Drivers', operationalData.totalDrivers.toString()],
-            ['Active Drivers', operationalData.activeDrivers.toString()]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Vehicle Utilization', margin, yPos);
-        yPos += 5;
-
-        const vehicleBody = Object.entries(operationalData.vehicleUtilization)
-          .sort(([, a], [, b]) => b.trips - a.trips)
-          .slice(0, 10)
-          .map(([vehicle, data], index) => [
-            (index + 1).toString(), vehicle, data.driverName, data.trips.toString()
-          ]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['#', 'VEHICLE PLATE', 'DRIVER', 'TRIPS']],
-          body: vehicleBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-      }
-
-      // ─── SAFETY ──────────────────────────────────────────────────────────────
-      if (selectedReport === 'safety' && safetyData) {
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Safety Report', margin, yPos);
-        yPos += 8;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['INSPECTION STATUS', 'COUNT']],
-          body: [
-            ['Total Vehicles',     safetyData.totalVehicles?.toString()     || '0'],
-            ['Inspected Vehicles', safetyData.inspectedVehicles?.toString() || '0'],
-            ['Due Soon',           safetyData.dueSoonCount?.toString()      || '0'],
-            ['Overdue',            safetyData.overdueCount?.toString()      || '0']
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Incidents by Severity', margin, yPos);
-        yPos += 5;
-
-        const severityBody = Object.entries(safetyData.incidentsBySeverity).map(([severity, count]) => [
-          severity, count.toString()
-        ]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['SEVERITY', 'COUNT']],
-          body: severityBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Incidents by Type', margin, yPos);
-        yPos += 5;
-
-        const typeBody = Object.entries(safetyData.incidentsByType)
-          .sort(([, a], [, b]) => b - a)
-          .map(([type, count], index) => [(index + 1).toString(), type, count.toString()]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['#', 'INCIDENT TYPE', 'COUNT']],
-          body: typeBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-      }
-
-      // ─── CUSTOMER ────────────────────────────────────────────────────────────
-      if (selectedReport === 'customer' && customerData) {
-        doc.setFontSize(14);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Customer Service Report', margin, yPos);
-        yPos += 8;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['BOOKING METRIC', 'VALUE']],
-          body: [
-            ['Total Bookings',     customerData.totalBookings.toString()],
-            ['Confirmed Bookings', customerData.confirmedBookings.toString()],
-            ['Cancelled Bookings', customerData.cancelledBookings.toString()],
-            ['Cancellation Rate',  `${customerData.cancellationRate}%`]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Customer Feedback Summary', margin, yPos);
-        yPos += 5;
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['FEEDBACK METRIC', 'VALUE']],
-          body: [
-            ['Total Feedback', customerData.totalFeedback.toString()],
-            ['Average Rating', `${customerData.avgRating}/5.0`]
-          ],
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Sentiment Analysis', margin, yPos);
-        yPos += 5;
-
-        const sentimentBody = Object.entries(customerData.feedbackBySentiment).map(([sentiment, count]) => [
-          sentiment, count.toString()
-        ]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['SENTIMENT', 'COUNT']],
-          body: sentimentBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-
-        yPos = doc.lastAutoTable.finalY + 10;
-
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'bold');
-        doc.setTextColor(37, 99, 235);
-        doc.text('Feedback by Category', margin, yPos);
-        yPos += 5;
-
-        const categoryBody = Object.entries(customerData.feedbackByCategory)
-          .sort(([, a], [, b]) => b - a)
-          .map(([category, count], index) => [(index + 1).toString(), category, count.toString()]);
-
-        doc.autoTable({
-          startY: yPos,
-          head: [['#', 'CATEGORY', 'COUNT']],
-          body: categoryBody,
-          theme: 'grid',
-          headStyles: { fillColor: [37, 99, 235], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 },
-          bodyStyles: { fontSize: 9 },
-          alternateRowStyles: { fillColor: [240, 245, 255] },
-          margin: { left: margin, right: margin }
-        });
-      }
-
-      // ✅ SIGNATURE SECTION
-      const addSignatureSection = () => {
-        const currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 20 : yPos + 20;
-
-        if (currentY + 50 > pageHeight - 30) {
-          doc.addPage();
-          yPos = 30;
-        } else {
-          yPos = currentY;
-        }
-
-        const boxWidth  = (pageWidth - (3 * margin)) / 2;
-        const boxHeight = 40;
-
-        doc.setDrawColor(150, 150, 150);
-        doc.setLineWidth(0.5);
-        doc.roundedRect(margin, yPos, boxWidth, boxHeight, 3, 3);
-        doc.setFontSize(11);
-        doc.setTextColor(37, 99, 235);
-        doc.setFont(undefined, 'bold');
-        doc.text('Prepared By', margin + boxWidth / 2, yPos + 10, { align: 'center' });
-        doc.setDrawColor(37, 99, 235);
-        doc.line(margin + 10, yPos + 25, margin + boxWidth - 10, yPos + 25);
-        doc.setFontSize(9);
-        doc.setTextColor(60, 60, 60);
-        doc.setFont(undefined, 'normal');
-        doc.text('System Administrator', margin + boxWidth / 2, yPos + 30, { align: 'center' });
-        doc.text('Date: __________',     margin + boxWidth / 2, yPos + 36, { align: 'center' });
-
-        doc.setDrawColor(150, 150, 150);
-        doc.roundedRect(margin + boxWidth + margin, yPos, boxWidth, boxHeight, 3, 3);
-        doc.setFontSize(11);
-        doc.setTextColor(37, 99, 235);
-        doc.setFont(undefined, 'bold');
-        doc.text('Approved By', margin + boxWidth + margin + boxWidth / 2, yPos + 10, { align: 'center' });
-        doc.setDrawColor(37, 99, 235);
-        doc.line(margin + boxWidth + margin + 10, yPos + 25, pageWidth - margin - 10, yPos + 25);
-        doc.setFontSize(9);
-        doc.setTextColor(60, 60, 60);
-        doc.setFont(undefined, 'normal');
-        doc.text('Director of Operations', margin + boxWidth + margin + boxWidth / 2, yPos + 30, { align: 'center' });
-        doc.text('Date: __________',       margin + boxWidth + margin + boxWidth / 2, yPos + 36, { align: 'center' });
-      };
-
-      addSignatureSection();
-
-      // ✅ FOOTER
-      const addFooter = () => {
-        const pageCount = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= pageCount; i++) {
-          doc.setPage(i);
-          doc.setDrawColor(200, 200, 200);
-          doc.setLineWidth(0.3);
-          doc.line(margin, pageHeight - 25, pageWidth - margin, pageHeight - 25);
-          doc.setFontSize(8);
-          doc.setTextColor(128, 128, 128);
-          doc.setFont(undefined, 'normal');
-          doc.text(
-            'Generated by Transport & Delivery Management System',
-            pageWidth / 2, pageHeight - 18, { align: 'center' }
-          );
-          doc.text(
-            `© ${new Date().getFullYear()} Brothers Express`,
-            pageWidth / 2, pageHeight - 13, { align: 'center' }
-          );
-          doc.setFont(undefined, 'bold');
-          doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
-        }
-      };
-
-      addFooter();
-
-      const fileName = `TDMS_${selectedReport}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
-      doc.save(fileName);
-      return true;
-    } catch (error) {
-      console.error('PDF generation error:', error);
-      setError('Failed to generate PDF: ' + error.message);
-      throw error;
+  // ─── PDF FOOTER ──────────────────────────────────────────────────────────────
+  const buildFooter = (doc) => {
+    const pw = doc.internal.pageSize.width;
+    const ph = doc.internal.pageSize.height;
+    const m  = 14;
+    const pc = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pc; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.3);
+      doc.line(m, ph - 14, pw - m, ph - 14);
+      doc.setFontSize(7.5); doc.setFont(undefined, 'normal'); doc.setTextColor(140, 140, 140);
+      doc.text('Generated by Transport & Delivery Management System', pw / 2, ph - 8, { align: 'center' });
+      doc.text(`\u00A9 ${new Date().getFullYear()} Brothers Express`, pw / 2, ph - 4, { align: 'center' });
+      doc.setFont(undefined, 'bold');
+      doc.text(`Page ${i} of ${pc}`, pw - m, ph - 4, { align: 'right' });
     }
   };
 
-  const reportTypes = [
-    { id: 'overview',    label: 'Business Overview', icon: <BarChart3     className="w-5 h-5" /> },
-    { id: 'financial',   label: 'Financial Report',  icon: <DollarSign    className="w-5 h-5" /> },
-    { id: 'operational', label: 'Operations Report', icon: <Activity      className="w-5 h-5" /> },
-    { id: 'safety',      label: 'Safety Report',     icon: <AlertTriangle className="w-5 h-5" /> },
-    { id: 'customer',    label: 'Customer Service',  icon: <Users         className="w-5 h-5" /> }
-  ];
+  // ─── SHARED TABLE STYLE ──────────────────────────────────────────────────────
+  const ts = {
+    theme: 'grid',
+    headStyles: {
+      fillColor: [37, 99, 235], textColor: [255, 255, 255],
+      fontStyle: 'bold', fontSize: 8.5, halign: 'center', cellPadding: 3.5,
+    },
+    bodyStyles:         { fontSize: 8, cellPadding: 3 },
+    alternateRowStyles: { fillColor: [240, 245, 255] },
+  };
 
-  // ─── RENDER OVERVIEW ─────────────────────────────────────────────────────────
-  const renderOverviewReport = () => {
-    if (!overviewData) return null;
+  // ══════════════════════════════════════════════════════════════════════════
+  // PDF 1 — TICKET REPORT  (no Payment Status column)
+  // ══════════════════════════════════════════════════════════════════════════
+  const downloadTicketPDF = async () => {
+    if (!allData) return;
+    setPdfLoading(p => ({ ...p, ticket: true }));
+    try {
+      const { jsPDF } = window.jspdf;
+      require('jspdf-autotable');
+      const doc    = new jsPDF({ orientation: 'landscape' });
+      const margin = 14;
+      const y      = await buildHeader(doc, 'Ticket Report');
+
+      doc.autoTable({
+        ...ts, startY: y, margin: { left: margin, right: margin },
+        columnStyles: {
+          0: { cellWidth: 18 },   // Ticket Id
+          1: { cellWidth: 48 },   // Route  ← wider so text fits without weird spacing
+          2: { cellWidth: 30 },   // Passenger Name
+          3: { cellWidth: 28 },   // Phone Number
+          4: { cellWidth: 22 },   // Travel Date
+          5: { cellWidth: 22 },   // Vehicle
+          6: { cellWidth: 16 },   // Seat No.
+          7: { cellWidth: 24 },   // Price
+          8: { cellWidth: 30 },   // Payment Method
+        },
+        head: [['Ticket Id', 'Route', 'Passenger Name', 'Phone Number', 'Travel Date', 'Vehicle', 'Seat No.', 'Price (RWF)', 'Payment Method']],
+        body: allData.ticketRows.length
+          ? allData.ticketRows.map(r => [r.idx, r.routePDF, r.passengerName, r.phoneNumber, r.travelDate, r.vehicle, r.seatNumber, r.price, r.paymentMethod])
+          : [['No confirmed bookings found in selected period', '', '', '', '', '', '', '', '']],
+      });
+
+      buildSignature(doc, doc.lastAutoTable.finalY + 18);
+      buildFooter(doc);
+      doc.save(`TicketReport_${dateRange.startDate}_${dateRange.endDate}.pdf`);
+    } catch (err) { setError('PDF error: ' + err.message); }
+    finally { setPdfLoading(p => ({ ...p, ticket: false })); }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PDF 2 — DRIVER REPORT  (no ID, Backup, License No., License Expiry)
+  // ══════════════════════════════════════════════════════════════════════════
+  const downloadDriverPDF = async () => {
+    if (!allData) return;
+    setPdfLoading(p => ({ ...p, driver: true }));
+    try {
+      const { jsPDF } = window.jspdf;
+      require('jspdf-autotable');
+      const doc    = new jsPDF({ orientation: 'landscape' });
+      const margin = 14;
+      const y      = await buildHeader(doc, 'Driver Report');
+
+      doc.autoTable({
+        ...ts, startY: y, margin: { left: margin, right: margin },
+        columnStyles: {
+          0: { cellWidth: 18 },   // Driver Id
+          1: { cellWidth: 38 },   // Driver Name
+          2: { cellWidth: 30 },   // Phone Number
+          3: { cellWidth: 36 },   // Address
+          4: { cellWidth: 24 },   // Hired Date
+          5: { cellWidth: 30 },   // Vehicle Assignment
+          6: { cellWidth: 26 },   // Driver Status
+          7: { cellWidth: 16 },   // TRIPS
+        },
+        head: [['Driver Id', 'Driver Name', 'Phone Number', 'Address', 'Hired Date', 'Vehicle Assignment', 'Driver Status', 'TRIPS']],
+        body: allData.driverRows.length
+          ? allData.driverRows.map(r => [r.idx, r.driverName, r.phoneNumber, r.address, r.hiredDate, r.vehicleAssignment, r.driverStatus, r.trips])
+          : [['No drivers found', '', '', '', '', '', '', '']],
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            if (data.column.index === 6) {
+              const v = data.cell.raw;
+              if (v === 'ACTIVE')   data.cell.styles.textColor = [22, 163, 74];
+              if (v === 'INACTIVE') data.cell.styles.textColor = [220, 38, 38];
+            }
+            if (data.column.index === 7) {
+              data.cell.styles.fontStyle  = 'bold';
+              data.cell.styles.textColor  = [37, 99, 235];
+            }
+          }
+        },
+      });
+
+      buildSignature(doc, doc.lastAutoTable.finalY + 18);
+      buildFooter(doc);
+      doc.save(`DriverReport_${dateRange.startDate}_${dateRange.endDate}.pdf`);
+    } catch (err) { setError('PDF error: ' + err.message); }
+    finally { setPdfLoading(p => ({ ...p, driver: false })); }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PDF 3 — DESTINATION REPORT  (no Distance, clean arrow)
+  // ══════════════════════════════════════════════════════════════════════════
+  const downloadDestinationPDF = async () => {
+    if (!allData) return;
+    setPdfLoading(p => ({ ...p, destination: true }));
+    try {
+      const { jsPDF } = window.jspdf;
+      require('jspdf-autotable');
+      const doc    = new jsPDF({ orientation: 'landscape' });
+      const margin = 14;
+      const y      = await buildHeader(doc, 'Destination Report');
+
+      doc.autoTable({
+        ...ts, startY: y, margin: { left: margin, right: margin },
+        columnStyles: {
+          0: { cellWidth: 18 },   // Route Id
+          1: { cellWidth: 62 },   // Destination  ← wider
+          2: { cellWidth: 28 },   // Price
+          3: { cellWidth: 26 },   // Duration
+          4: { cellWidth: 26 },   // Vehicle
+          5: { cellWidth: 18 },   // Seats
+          6: { cellWidth: 16 },   // Trips
+          7: { cellWidth: 22 },   // Status
+        },
+        head: [['Route Id', 'Destination', 'Price', 'Duration', 'Vehicle', 'Seats', 'Trips', 'Status']],
+        body: allData.destinationRows.length
+          ? allData.destinationRows.map(r => [r.idx, r.destPDF, r.price, r.duration, r.vehicle, r.seats, r.trips, r.status])
+          : [['No routes found', '', '', '', '', '', '', '']],
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            if (data.column.index === 6) {
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [37, 99, 235];
+            }
+            if (data.column.index === 7) {
+              const v = data.cell.raw;
+              if (v === 'ACTIVE')   data.cell.styles.textColor = [22, 163, 74];
+              if (v === 'INACTIVE') data.cell.styles.textColor = [220, 38, 38];
+            }
+          }
+        },
+      });
+
+      buildSignature(doc, doc.lastAutoTable.finalY + 18);
+      buildFooter(doc);
+      doc.save(`DestinationReport_${dateRange.startDate}_${dateRange.endDate}.pdf`);
+    } catch (err) { setError('PDF error: ' + err.message); }
+    finally { setPdfLoading(p => ({ ...p, destination: false })); }
+  };
+
+  // ─── STATUS BADGE ────────────────────────────────────────────────────────────
+  const Badge = ({ value }) => {
+    const map = {
+      ACTIVE:       'bg-green-100  text-green-700',
+      INACTIVE:     'bg-red-100    text-red-700',
+      PAID:         'bg-green-100  text-green-700',
+      PENDING:      'bg-yellow-100 text-yellow-700',
+      FAILED:       'bg-red-100    text-red-700',
+      CONFIRMED:    'bg-green-100  text-green-700',
+      CANCELLED:    'bg-red-100    text-red-700',
+      MOBILE_MONEY: 'bg-purple-100 text-purple-700',
+      CASH:         'bg-gray-100   text-gray-700',
+    };
     return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-green-600" />
-            Financial Overview
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-green-600">RWF {overviewData.totalRevenue.toLocaleString()}</p>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Bookings</p>
-              <p className="text-2xl font-bold text-blue-600">{overviewData.totalBookings}</p>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Cancellation Rate</p>
-              <p className="text-2xl font-bold text-purple-600">{overviewData.cancellationRate}%</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Car className="w-5 h-5 text-blue-600" />
-            Operations Overview
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Vehicles</p>
-              <p className="text-2xl font-bold text-blue-600">{overviewData.activeVehicles}/{overviewData.totalVehicles}</p>
-              <p className="text-xs text-gray-500">Active/Total</p>
-            </div>
-            <div className="bg-indigo-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Drivers</p>
-              <p className="text-2xl font-bold text-indigo-600">{overviewData.activeDrivers}/{overviewData.totalDrivers}</p>
-              <p className="text-xs text-gray-500">Active/Total</p>
-            </div>
-            <div className="bg-teal-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Routes</p>
-              <p className="text-2xl font-bold text-teal-600">{overviewData.totalRoutes}</p>
-            </div>
-            <div className="bg-cyan-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Packages</p>
-              <p className="text-2xl font-bold text-cyan-600">{overviewData.deliveredPackages}/{overviewData.totalPackages}</p>
-              <p className="text-xs text-gray-500">Delivered/Total</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5 text-purple-600" />
-              Customer Service
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total Feedback</span>
-                <span className="font-bold text-gray-800">{overviewData.totalFeedback}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Average Rating</span>
-                <span className="font-bold text-yellow-600">{overviewData.avgRating}/5.0</span>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-orange-600" />
-              Safety & Incidents
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Total Incidents</span>
-                <span className="font-bold text-gray-800">{overviewData.totalIncidents}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Critical</span>
-                <span className="font-bold text-red-600">{overviewData.criticalIncidents}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600">Resolved</span>
-                <span className="font-bold text-green-600">{overviewData.resolvedIncidents}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${map[value] ?? 'bg-gray-100 text-gray-600'}`}>
+        {value ?? '-'}
+      </span>
     );
   };
 
-  // ─── RENDER FINANCIAL ────────────────────────────────────────────────────────
-  const renderFinancialReport = () => {
-    if (!financialData) return null;
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Revenue Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Revenue</p>
-              <p className="text-2xl font-bold text-green-600">RWF {financialData.totalRevenue.toLocaleString()}</p>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Booking Revenue</p>
-              <p className="text-2xl font-bold text-blue-600">RWF {financialData.bookingRevenue.toLocaleString()}</p>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Package Revenue</p>
-              <p className="text-2xl font-bold text-purple-600">RWF {financialData.packageRevenue.toLocaleString()}</p>
-            </div>
-            <div className="bg-indigo-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Transactions</p>
-              <p className="text-2xl font-bold text-indigo-600">{financialData.totalTransactions}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Payment Methods Breakdown</h3>
-          <div className="space-y-3">
-            {Object.entries(financialData.paymentMethods).map(([method, amount]) => (
-              <div key={method} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                <span className="text-gray-700 font-medium">{method}</span>
-                <span className="text-gray-900 font-bold">RWF {amount.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Top Routes by Revenue</h3>
-          <div className="space-y-3">
-            {Object.entries(financialData.revenueByRoute)
-              .sort(([, a], [, b]) => b - a)
-              .slice(0, 10)
-              .map(([route, revenue]) => (
-                <div key={route} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">{route}</span>
-                  <span className="text-gray-900 font-bold">RWF {revenue.toLocaleString()}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── RENDER OPERATIONAL ──────────────────────────────────────────────────────
-  const renderOperationalReport = () => {
-    if (!operationalData) return null;
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Trip Performance</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Trips</p>
-              <p className="text-2xl font-bold text-blue-600">{operationalData.totalTrips}</p>
-            </div>
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Completed</p>
-              <p className="text-2xl font-bold text-green-600">{operationalData.completedTrips}</p>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Completion Rate</p>
-              <p className="text-2xl font-bold text-purple-600">{operationalData.completionRate}%</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Vehicle Utilization</h3>
-          <div className="space-y-3">
-            {Object.entries(operationalData.vehicleUtilization)
-              .sort(([, a], [, b]) => b.trips - a.trips)
-              .slice(0, 10)
-              .map(([vehicle, data]) => (
-                <div key={vehicle} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <div className="flex flex-col">
-                    <span className="text-gray-800 font-medium">{vehicle}</span>
-                    <span className="text-gray-400 text-xs mt-0.5">Driver: {data.driverName}</span>
-                  </div>
-                  <span className="text-gray-900 font-bold">{data.trips} trips</span>
-                </div>
-              ))}
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Most Popular Routes</h3>
-          <div className="space-y-3">
-            {Object.entries(operationalData.routePopularity)
-              .sort(([, a], [, b]) => b - a)
-              .slice(0, 10)
-              .map(([route, bookings]) => (
-                <div key={route} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">{route}</span>
-                  <span className="text-gray-900 font-bold">{bookings} bookings</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // ─── RENDER SAFETY ───────────────────────────────────────────────────────────
-  const renderSafetyReport = () => {
-    if (!safetyData) return null;
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Vehicle Inspection Status</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Vehicles</p>
-              <p className="text-2xl font-bold text-blue-600">{safetyData.totalVehicles}</p>
-            </div>
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Inspected</p>
-              <p className="text-2xl font-bold text-green-600">{safetyData.inspectedVehicles}</p>
-            </div>
-            <div className="bg-yellow-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Due Soon</p>
-              <p className="text-2xl font-bold text-yellow-600">{safetyData.dueSoonCount}</p>
-            </div>
-            <div className="bg-red-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Overdue</p>
-              <p className="text-2xl font-bold text-red-600">{safetyData.overdueCount}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Incidents Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h4 className="font-semibold text-gray-700 mb-3">By Severity</h4>
-              <div className="space-y-2">
-                {Object.entries(safetyData.incidentsBySeverity).map(([severity, count]) => (
-                  <div key={severity} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                    <span className="text-gray-700">{severity}</span>
-                    <span className={`font-bold ${
-                      severity === 'CRITICAL' ? 'text-red-600' :
-                      severity === 'MAJOR' ? 'text-orange-600' :
-                      severity === 'MODERATE' ? 'text-yellow-600' : 'text-green-600'
-                    }`}>{count}</span>
-                  </div>
+  // ─── TABLE RENDERER ──────────────────────────────────────────────────────────
+  const DataTable = ({ columns, rows, emptyMsg }) => (
+    <div className="overflow-x-auto">
+      {rows.length === 0
+        ? <div className="py-14 text-center text-gray-400 text-sm">{emptyMsg}</div>
+        : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-blue-600">
+                {columns.map((col, i) => (
+                  <th key={i} className={`px-3 py-3 text-xs font-semibold text-white whitespace-nowrap
+                    ${col.right ? 'text-right' : 'text-center'}`}>
+                    {col.label}
+                  </th>
                 ))}
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-700 mb-3">Status</h4>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">Total Incidents</span>
-                  <span className="font-bold text-gray-900">{safetyData.totalIncidents}</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">Resolved</span>
-                  <span className="font-bold text-green-600">{safetyData.resolvedIncidents}</span>
-                </div>
-                <div className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">Pending</span>
-                  <span className="font-bold text-orange-600">{safetyData.pendingIncidents}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Incidents by Type</h3>
-          <div className="space-y-3">
-            {Object.entries(safetyData.incidentsByType)
-              .sort(([, a], [, b]) => b - a)
-              .map(([type, count]) => (
-                <div key={type} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">{type}</span>
-                  <span className="text-gray-900 font-bold">{count}</span>
-                </div>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className={`border-b border-gray-100 hover:bg-blue-50/40 transition-colors
+                  ${ri % 2 === 0 ? 'bg-white' : 'bg-blue-50/20'}`}>
+                  {columns.map((col, ci) => (
+                    <td key={ci} className={`px-3 py-2.5 whitespace-nowrap
+                      ${col.right  ? 'text-right font-semibold text-gray-800' : 'text-gray-700'}
+                      ${col.bold   ? 'font-semibold text-gray-900' : ''}
+                      ${col.blue   ? 'font-bold text-blue-600' : ''}
+                      ${col.center ? 'text-center' : ''}
+                    `}>
+                      {col.badge  ? <Badge value={row[col.key]} />
+                       : col.render ? col.render(row)
+                       : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
               ))}
-          </div>
+            </tbody>
+          </table>
+        )
+      }
+    </div>
+  );
+
+  // ─── ACTIVE TAB CONTENT ──────────────────────────────────────────────────────
+  const renderTabContent = () => {
+    if (loading) return (
+      <div className="flex items-center justify-center h-56">
+        <div className="text-center">
+          <Loader className="w-10 h-10 text-blue-600 animate-spin mx-auto" />
+          <p className="mt-3 text-gray-500 text-sm">Loading data…</p>
         </div>
       </div>
     );
-  };
 
-  // ─── RENDER CUSTOMER ─────────────────────────────────────────────────────────
-  const renderCustomerReport = () => {
-    if (!customerData) return null;
-    return (
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Booking Statistics</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Total Bookings</p>
-              <p className="text-2xl font-bold text-blue-600">{customerData.totalBookings}</p>
-            </div>
-            <div className="bg-green-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Confirmed</p>
-              <p className="text-2xl font-bold text-green-600">{customerData.confirmedBookings}</p>
-            </div>
-            <div className="bg-red-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Cancelled</p>
-              <p className="text-2xl font-bold text-red-600">{customerData.cancelledBookings}</p>
-            </div>
-            <div className="bg-orange-50 rounded-lg p-4">
-              <p className="text-sm text-gray-600">Cancellation Rate</p>
-              <p className="text-2xl font-bold text-orange-600">{customerData.cancellationRate}%</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Customer Feedback</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <div className="bg-yellow-50 rounded-lg p-4 mb-4">
-                <p className="text-sm text-gray-600">Average Rating</p>
-                <p className="text-3xl font-bold text-yellow-600">{customerData.avgRating}/5.0</p>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600">Total Feedback</p>
-                <p className="text-2xl font-bold text-gray-800">{customerData.totalFeedback}</p>
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-700 mb-3">Sentiment Analysis</h4>
-              <div className="space-y-2">
-                {Object.entries(customerData.feedbackBySentiment).map(([sentiment, count]) => (
-                  <div key={sentiment} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                    <span className={`font-medium ${
-                      sentiment === 'POSITIVE' ? 'text-green-600' :
-                      sentiment === 'NEGATIVE' ? 'text-red-600' : 'text-gray-600'
-                    }`}>{sentiment}</span>
-                    <span className="font-bold text-gray-900">{count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Feedback by Category</h3>
-          <div className="space-y-3">
-            {Object.entries(customerData.feedbackByCategory)
-              .sort(([, a], [, b]) => b - a)
-              .map(([category, count]) => (
-                <div key={category} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                  <span className="text-gray-700">{category}</span>
-                  <span className="text-gray-900 font-bold">{count}</span>
-                </div>
-              ))}
-          </div>
-        </div>
-      </div>
+    if (!allData) return null;
+
+    if (activeTab === 'ticket') return (
+      <DataTable
+        emptyMsg="No confirmed bookings in the selected period."
+        columns={[
+          { label: 'Ticket Id',      key: 'idx',           center: true, bold: true },
+          { label: 'Route',          key: 'route'                                   },
+          { label: 'Passenger Name', key: 'passengerName', bold: true               },
+          { label: 'Phone Number',   key: 'phoneNumber'                             },
+          { label: 'Travel Date',    key: 'travelDate'                              },
+          { label: 'Vehicle',        key: 'vehicle',       bold: true               },
+          { label: 'Seat No.',       key: 'seatNumber',    center: true             },
+          { label: 'Price (RWF)',    key: 'price',         right: true              },
+          { label: 'Payment Method', key: 'paymentMethod', badge: true              },
+        ]}
+        rows={allData.ticketRows}
+      />
+    );
+
+    if (activeTab === 'driver') return (
+      <DataTable
+        emptyMsg="No drivers found."
+        columns={[
+          { label: 'Driver Id',         key: 'idx',               center: true, bold: true },
+          { label: 'Driver Name',       key: 'driverName',        bold: true               },
+          { label: 'Phone Number',      key: 'phoneNumber'                                 },
+          { label: 'Address',           key: 'address'                                     },
+          { label: 'Hired Date',        key: 'hiredDate'                                   },
+          { label: 'Vehicle Assignment',key: 'vehicleAssignment', bold: true               },
+          { label: 'Driver Status',     key: 'driverStatus',      badge: true              },
+          { label: 'TRIPS',             key: 'trips',             blue: true, right: true  },
+        ]}
+        rows={allData.driverRows}
+      />
+    );
+
+    if (activeTab === 'destination') return (
+      <DataTable
+        emptyMsg="No routes found."
+        columns={[
+          { label: 'Route Id',    key: 'idx',         center: true, bold: true },
+          { label: 'Destination', key: 'destination', bold: true               },
+          { label: 'Price',       key: 'price',       right: true              },
+          { label: 'Duration',    key: 'duration'                              },
+          { label: 'Vehicle',     key: 'vehicle',     bold: true               },
+          { label: 'Seats',       key: 'seats',       center: true             },
+          { label: 'Trips',       key: 'trips',       blue: true, right: true  },
+          { label: 'Status',      key: 'status',      badge: true              },
+        ]}
+        rows={allData.destinationRows}
+      />
     );
   };
 
-  // ─── MAIN RENDER ─────────────────────────────────────────────────────────────
+  // ─── ACTIVE DOWNLOAD HANDLER ─────────────────────────────────────────────────
+  const handleDownload = () => {
+    if (activeTab === 'ticket')      return downloadTicketPDF();
+    if (activeTab === 'driver')      return downloadDriverPDF();
+    if (activeTab === 'destination') return downloadDestinationPDF();
+  };
+
+  const activeTabData = TABS.find(t => t.id === activeTab);
+  const isDownloading  = pdfLoading[activeTab];
+  const rowCount       = allData
+    ? (activeTab === 'ticket'      ? allData.ticketRows.length
+     : activeTab === 'driver'      ? allData.driverRows.length
+     : allData.destinationRows.length)
+    : 0;
+
+  // ─── RENDER ───────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">Admin Reports</h1>
-        </div>
-        <button
-          onClick={generatePDF}
-          disabled={loading}
-          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
-        >
-          <Download className="w-5 h-5" />
-          {loading ? 'Generating...' : 'Download Report'}
-        </button>
+    <div className="space-y-6 pb-16">
+
+      {/* Page title */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-800">Admin Reports</h1>
+        <p className="text-sm text-gray-500 mt-1">Select a report tab · download as PDF</p>
       </div>
 
+      {/* Error */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center justify-between">
+        <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
           <span>{error}</span>
-          <button onClick={() => setError('')}><X className="w-5 h-5" /></button>
+          <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      {/* Date range */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="w-5 h-5 text-gray-600" />
-          <h2 className="text-lg font-semibold text-gray-800">Report Type</h2>
+          <Calendar className="w-5 h-5 text-blue-600" />
+          <h2 className="font-semibold text-gray-700">Date Range</h2>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {reportTypes.map((type) => (
-            <button
-              key={type.id}
-              onClick={() => setSelectedReport(type.id)}
-              className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-colors ${
-                selectedReport === type.id
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {type.icon}
-              <span className="text-sm font-medium">{type.label}</span>
-            </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[['Start Date', 'startDate'], ['End Date', 'endDate']].map(([lbl, key]) => (
+            <div key={key}>
+              <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">{lbl}</label>
+              <input
+                type="date"
+                value={dateRange[key]}
+                onChange={e => setDateRange(d => ({ ...d, [key]: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+              />
+            </div>
           ))}
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Calendar className="w-5 h-5 text-gray-600" />
-          <h2 className="text-lg font-semibold text-gray-800">Date Range</h2>
+      {/* ── TAB CARD ── */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+
+        {/* Tab bar + download button */}
+        <div className="flex items-center justify-between px-4 pt-4 pb-0 border-b border-gray-100">
+
+          {/* Tabs */}
+          <div className="flex gap-1">
+            {TABS.map(tab => {
+              const Icon    = tab.icon;
+              const active  = tab.id === activeTab;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold rounded-t-xl border-b-2 transition-all
+                    ${active
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/60'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Download button — always visible, for the active tab */}
+          <div className="pb-3">
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading || !allData || loading}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50
+                disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-2.5 rounded-xl
+                transition-colors shadow-sm"
+            >
+              {isDownloading
+                ? <><Loader className="w-4 h-4 animate-spin" /> Generating…</>
+                : <><Download className="w-4 h-4" /> Download PDF</>
+              }
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
-            <input
-              type="date"
-              value={dateRange.startDate}
-              onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
-            <input
-              type="date"
-              value={dateRange.endDate}
-              onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
-          </div>
+
+        {/* Tab subtitle row */}
+        <div className="flex items-center gap-2 px-5 py-3 bg-gray-50 border-b border-gray-100">
+          {activeTabData && (
+            <>
+              <activeTabData.icon className="w-4 h-4 text-blue-500" />
+              <span className="text-sm font-medium text-gray-700">{activeTabData.label}</span>
+              {allData && !loading && (
+                <span className="ml-2 text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">
+                  {rowCount} record{rowCount !== 1 ? 's' : ''}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Tab content */}
+        <div className="min-h-[200px]">
+          {renderTabContent()}
         </div>
       </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center h-64 bg-white rounded-xl shadow-sm border border-gray-200">
-          <div className="text-center">
-            <Loader className="w-12 h-12 text-blue-600 animate-spin mx-auto" />
-            <p className="mt-4 text-gray-600">Loading report data...</p>
-          </div>
-        </div>
-      ) : (
-        <>
-          {selectedReport === 'overview'     && renderOverviewReport()}
-          {selectedReport === 'financial'    && renderFinancialReport()}
-          {selectedReport === 'operational'  && renderOperationalReport()}
-          {selectedReport === 'safety'       && renderSafetyReport()}
-          {selectedReport === 'customer'     && renderCustomerReport()}
-        </>
-      )}
     </div>
   );
 };
